@@ -1,0 +1,802 @@
+﻿import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  Activity, HeartPulse, BrainCircuit, AlertTriangle, Wind,
+  Stethoscope, FileSearch, ShieldAlert, Fingerprint, Radio, 
+  Zap, Syringe, ClipboardList, Microchip, Clock, CheckCircle2, 
+  XCircle, FileWarning, PlayCircle, Minus, Square, X,
+  Menu, Download, Lock, CheckSquare, FileText, Crosshair
+} from 'lucide-react';
+
+/* --- ERROR BOUNDARY --- */
+class PanelErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-6 h-full flex items-center justify-center">
+          <div className="bg-red-950/20 border border-red-500/30 rounded-xl p-6 text-center max-w-md">
+            <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
+            <h3 className="text-red-300 font-semibold mb-2">ModÃ¼l YÃ¼kleme HatasÄ±</h3>
+            <p className="text-sm text-red-400/80 mb-4">Bu tÄ±bbi panel ÅŸu anda yÃ¼klenemiyor. JIFRAF ana sistemi bu durumdan etkilenmemiÅŸtir (Isolated Sandbox).</p>
+            <button onClick={() => this.setState({ hasError: false })} className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 px-4 py-2 rounded border border-red-500/30">
+              Yeniden Dene
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+/* --- MOCK DATA SEPARATION --- */
+const mockData = {
+  bridgeStatusData: {
+    mode: 'Standalone',
+    gatewayActive: true,
+    lastSync: new Date().toISOString()
+  },
+  caseData: {
+    id: 'JIF-AMX-912',
+    name: 'Akut Dispne ve GÃ¶ÄŸÃ¼s AÄŸrÄ±sÄ±',
+    level: 'HIGH_RISK',
+    evidenceMode: true
+  },
+  vitalsData: [
+    { title: "NabÄ±z", value: "124", unit: "bpm", status: "high", icon: HeartPulse },
+    { title: "Tansiyon", value: "85/50", unit: "mmHg", status: "low", icon: Activity },
+    { title: "SpO2", value: "92", unit: "%", status: "low", icon: Wind },
+    { title: "AteÅŸ", value: "38.4", unit: "Â°C", status: "high", icon: Activity },
+    { title: "Solunum", value: "28", unit: "/dk", status: "high", icon: Activity },
+    { title: "Kan Åekeri", value: "110", unit: "mg/dL", status: "normal", icon: Activity },
+    { title: "BilinÃ§", value: "AÃ§Ä±k", unit: "GCS:14", status: "warning", icon: BrainCircuit }
+  ],
+  anamnesisData: {
+    chiefComplaint: "Ani baÅŸlayan nefes darlÄ±ÄŸÄ± ve saÄŸ yan aÄŸrÄ±sÄ±",
+    onset: "YaklaÅŸÄ±k 2 saat Ã¶nce (Akut)",
+    painType: "Batar tarzda, nefes almakla artÄ±yor (PlÃ¶retik)",
+    history: "Hipertansiyon (5 yÄ±l), DVT (1 yÄ±l Ã¶nce)",
+    medication: "Amlodipin 5mg. AntikoagÃ¼lan (Apiksaban) kullanÄ±mÄ±nÄ± 2 ay Ã¶nce kesmiÅŸ.",
+    nlpSummary: "Hasta akut dispne ve plÃ¶retik gÃ¶ÄŸÃ¼s aÄŸrÄ±sÄ± ile baÅŸvurdu. Ã–zgeÃ§miÅŸindeki DVT Ã¶ykÃ¼sÃ¼ ve antikoagÃ¼lanÄ±n kesilmiÅŸ olmasÄ± klinik ÅŸÃ¼pheyi artÄ±rmaktadÄ±r."
+  },
+  labData: [
+    { name: "D-Dimer", result: "3450", unit: "ng/mL", refRange: "< 500", status: "critical" },
+    { name: "Troponin I", result: "0.12", unit: "ng/mL", refRange: "< 0.04", status: "high" },
+    { name: "WBC", result: "11.2", unit: "10^3/uL", refRange: "4.0 - 10.0", status: "high" }
+  ],
+  evidenceChainData: [
+    { id: 1, time: "14:02", timestamp: "2026-05-20T14:02:00Z", title: "Anamnez AlÄ±ndÄ±", type: "info", source_type: "nlp_engine", source_id: "nlp_01", confidence: 0.95, confidence_label: "HIGH", simulated: false },
+    { id: 2, time: "14:05", timestamp: "2026-05-20T14:05:00Z", title: "TaÅŸikardi (124 bpm)", type: "warning", source_type: "device_telemetry", source_id: "mon_88", confidence: 0.99, confidence_label: "CERTAIN", simulated: true },
+    { id: 3, time: "14:08", timestamp: "2026-05-20T14:08:00Z", title: "SpO2 %92", type: "danger", source_type: "device_telemetry", source_id: "mon_88", confidence: 0.99, confidence_label: "CERTAIN", simulated: true },
+    { id: 4, time: "14:12", timestamp: "2026-05-20T14:12:00Z", title: "S1Q3T3 Paterni", type: "danger", source_type: "ekg_plugin", source_id: "ekg_v2", confidence: 0.88, confidence_label: "MODERATE", simulated: true },
+    { id: 5, time: "14:15", timestamp: "2026-05-20T14:15:00Z", title: "PE OlasÄ±lÄ±ÄŸÄ± YÃ¼ksek", type: "alert", source_type: "synthesis_engine", source_id: "synth_04", confidence: 0.82, confidence_label: "STRONG", simulated: true }
+  ],
+  riskSummaryData: {
+    strength: 82,
+    missingData: ['Eko', 'BNP'],
+    probabilities: [
+      { title: "Pulmoner Emboli Klinik Uyumu", probability: 78 },
+      { title: "Akut Koroner Sendrom OlasÄ±lÄ±ÄŸÄ±", probability: 45 }
+    ]
+  },
+  pluginStatusData: [
+    { name: "Cardiology.AI Engine", active: true, mode: "simulated" },
+    { name: "Pulmonology.AI Engine", active: true, mode: "simulated" },
+    { name: "Toxicology NLP", active: false, mode: "disabled" }
+  ]
+};
+
+const mockAudioBars = [20, 45, 80, 30, 60, 90, 50, 75, 40, 85, 35, 65, 25, 70, 55, 95, 40, 60, 30, 80];
+
+/* --- JIFRAF BRIDGE MOCK API --- */
+const MedicalBridgeAPI = {
+  receiveCaseContextFromJifraf: () => {
+    console.log("[Bridge] Context received from JIFRAF Gateway.");
+    return mockData.caseData;
+  },
+  validatePluginOutput: (pluginData) => {
+    console.log("[Bridge] Validating plugin sandbox schema:", pluginData);
+    if (!pluginData) return false;
+    if (typeof pluginData.plugin_name !== 'string') return false;
+    if (typeof pluginData.output_type !== 'string') return false;
+    if (typeof pluginData.simulated !== 'boolean') return false;
+    if (typeof pluginData.confidence !== 'number' || pluginData.confidence < 0 || pluginData.confidence > 1) return false;
+    return true;
+  },
+  createVersionedCaseSnapshot: (currentState) => {
+    return {
+      case_id: currentState.caseData.id,
+      created_at: new Date().toISOString(),
+      app_version: "1.0.5-standalone",
+      gateway_mode: currentState.bridgeStatusData.mode,
+      input_summary: currentState.anamnesisData.nlpSummary,
+      vitals_summary: currentState.vitalsData.map(v => `${v.title}: ${v.value} ${v.unit}`).join(' | '),
+      plugin_versions: currentState.pluginStatusData,
+      evidence_chain: currentState.evidenceChainData,
+      risk_summary: currentState.riskSummaryData,
+      export_disclaimer: "NOT FOR CLINICAL USE. Requires human expert verification."
+    };
+  },
+  exportEvidenceSummaryToJifraf: (snapshot) => {
+    console.log("[Bridge] Exporting evidence summary...", snapshot.evidence_chain);
+    return Promise.resolve({ success: true });
+  },
+  exportRiskSummaryToJifraf: (snapshot) => {
+    console.log("[Bridge] Exporting risk summary...", snapshot.risk_summary);
+    return Promise.resolve({ success: true });
+  },
+  exportToJifraf: async (snapshot) => {
+    console.log("[Bridge] Triggering full export sequence...");
+    await MedicalBridgeAPI.exportEvidenceSummaryToJifraf(snapshot);
+    await MedicalBridgeAPI.exportRiskSummaryToJifraf(snapshot);
+    return { success: true, message: "Successfully exported to JIFRAF Core" };
+  }
+};
+
+/* --- MAIN COMPONENT --- */
+export default function JifrafMedicalIntelligenceApp() {
+  const [activeTab, setActiveTab] = useState('anamnez');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [windowState, setWindowState] = useState('normal'); // 'normal', 'minimized', 'fullscreen'
+  const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false);
+  const [isClosed, setIsClosed] = useState(false);
+
+  useEffect(() => {
+    MedicalBridgeAPI.receiveCaseContextFromJifraf();
+  }, []);
+
+  const handleExport = () => {
+    const snapshot = MedicalBridgeAPI.createVersionedCaseSnapshot(mockData);
+    MedicalBridgeAPI.exportToJifraf(snapshot);
+    setIsApprovalModalOpen(false);
+  };
+
+  const handleClose = () => {
+    if (window.confirm("JIFRAF Medical modÃ¼lÃ¼ kapatÄ±lacak. OnaylÄ±yor musunuz?")) {
+      setIsClosed(true);
+    }
+  };
+
+  if (isClosed) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950">
+        <div className="text-center space-y-4">
+          <Microchip className="w-12 h-12 text-slate-700 mx-auto" />
+          <h2 className="text-slate-500 font-mono text-lg">MEDICAL APP CLOSED</h2>
+          <button 
+            onClick={() => setIsClosed(false)} 
+            className="px-4 py-2 bg-cyan-900/30 text-cyan-500 rounded border border-cyan-500/30 text-sm hover:bg-cyan-900/50 transition"
+          >
+            Reconnect to Gateway
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (windowState === 'minimized') {
+    return (
+      <div className="fixed bottom-4 right-4 z-50 bg-slate-950 border border-cyan-500/50 rounded-lg p-4 shadow-2xl flex items-center gap-4">
+        <Microchip className="text-cyan-400 w-6 h-6 animate-pulse" />
+        <div>
+          <div className="text-sm font-bold text-slate-200">JIFRAF Medical Gateway</div>
+          <div className="text-xs text-slate-500">App running in background...</div>
+        </div>
+        <button onClick={() => setWindowState('normal')} className="ml-4 p-2 bg-slate-800 hover:bg-slate-700 rounded text-slate-300">
+          <Square className="w-4 h-4" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-sm p-0 lg:p-4 font-sans text-slate-300">
+      <style>{`
+        @keyframes shimmer { 100% { transform: translateX(100%); } }
+        .animate-shimmer { animation: shimmer 2.5s infinite; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+      `}</style>
+
+      {/* Watermark */}
+      <div className="absolute inset-0 pointer-events-none z-0 flex items-center justify-center opacity-5 overflow-hidden">
+        <div className="text-9xl font-black text-white -rotate-45 whitespace-nowrap">DEMO / NOT FOR CLINICAL USE</div>
+      </div>
+
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className={`relative z-10 w-full bg-slate-950 border border-slate-800 shadow-[0_0_80px_rgba(6,182,212,0.1)] flex flex-col overflow-hidden transition-all duration-300 ${
+          windowState === 'fullscreen' ? 'h-full lg:rounded-none border-0' : 'max-w-[1600px] h-full lg:h-[95vh] lg:rounded-2xl lg:border-cyan-500/30'
+        }`}
+      >
+        <HeaderBar 
+          windowState={windowState} 
+          setWindowState={setWindowState} 
+          isMobileMenuOpen={isMobileMenuOpen}
+          setIsMobileMenuOpen={setIsMobileMenuOpen}
+          onClose={handleClose}
+        />
+        
+        <div className="overflow-x-auto scrollbar-hide border-b border-slate-800 bg-slate-900/50 shrink-0">
+          <VitalStrip vitals={mockData.vitalsData} />
+        </div>
+
+        <div className="flex flex-1 overflow-hidden flex-col lg:flex-row relative">
+          <SidebarMenu 
+            activeTab={activeTab} 
+            setActiveTab={setActiveTab} 
+            isMobileMenuOpen={isMobileMenuOpen} 
+            setIsMobileMenuOpen={setIsMobileMenuOpen}
+          />
+          
+          <main className="flex-1 bg-slate-950 overflow-y-auto relative p-4 lg:p-6">
+            <MainPanelRouter activeTab={activeTab} />
+          </main>
+
+          <RightSynthesisPanel onExportRequest={() => setIsApprovalModalOpen(true)} />
+        </div>
+
+        <EvidenceTimeline evidence={mockData.evidenceChainData} />
+      </motion.div>
+
+      <AnimatePresence>
+        {isApprovalModalOpen && (
+          <HumanApprovalModal 
+            onConfirm={handleExport} 
+            onCancel={() => setIsApprovalModalOpen(false)} 
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* --- LAYOUT COMPONENTS --- */
+
+function HeaderBar({ windowState, setWindowState, isMobileMenuOpen, setIsMobileMenuOpen, onClose }) {
+  return (
+    <header className="h-14 lg:h-16 flex items-center justify-between px-4 lg:px-6 bg-slate-900 border-b border-slate-800 shrink-0 select-none">
+      <div className="flex items-center gap-3">
+        <button className="lg:hidden p-2 text-slate-400 hover:text-slate-200" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
+          <Menu className="w-5 h-5" />
+        </button>
+        <div className="flex items-center justify-center w-8 h-8 lg:w-10 lg:h-10 rounded-lg bg-cyan-500/10 border border-cyan-500/50">
+          <Microchip className="text-cyan-400 w-4 h-4 lg:w-5 lg:h-5" />
+        </div>
+        <div>
+          <h1 className="text-sm lg:text-lg font-bold text-slate-100 tracking-wide flex items-center gap-2">
+            JIFRAF <span className="text-cyan-400 hidden sm:inline">MEDICAL INTELLIGENCE</span>
+          </h1>
+          <div className="text-[10px] lg:text-xs text-slate-500 flex items-center gap-3">
+            <span className="flex items-center gap-1"><Fingerprint className="w-3 h-3"/> {mockData.caseData.id}</span>
+            <span className="hidden sm:flex items-center gap-1 text-amber-400 bg-amber-400/10 px-1.5 rounded"><Lock className="w-3 h-3"/> SANDBOX MODE</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 lg:gap-6">
+        <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-xs lg:text-sm font-semibold">
+          <AlertTriangle className="w-4 h-4" />
+          RÄ°SK: {mockData.caseData.level}
+        </div>
+        
+        {/* Window Controls */}
+        <div className="flex items-center gap-1 ml-4 border-l border-slate-700 pl-4">
+          <button onClick={() => setWindowState('minimized')} className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors"><Minus className="w-4 h-4" /></button>
+          <button onClick={() => setWindowState(windowState === 'fullscreen' ? 'normal' : 'fullscreen')} className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors">
+            {windowState === 'fullscreen' ? <X className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+          </button>
+          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"><X className="w-4 h-4" /></button>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function VitalStrip({ vitals }) {
+  return (
+    <div className="flex items-center min-w-max h-20 divide-x divide-slate-800">
+      {vitals.map((vital, idx) => (
+        <VitalCard key={idx} {...vital} />
+      ))}
+    </div>
+  );
+}
+
+function SidebarMenu({ activeTab, setActiveTab, isMobileMenuOpen, setIsMobileMenuOpen }) {
+  const menuItems = [
+    { id: 'anamnez', label: 'Anamnez', icon: ClipboardList },
+    { id: 'endikasyon', label: 'Endikasyonlar', icon: Crosshair },
+    { id: 'ekg', label: 'EKG Analizi', icon: HeartPulse },
+    { id: 'steteskop', label: 'OskÃ¼ltasyon', icon: Stethoscope },
+    { id: 'radyoloji', label: 'Radyoloji', icon: FileSearch },
+    { id: 'lab', label: 'Laboratuvar', icon: Syringe },
+    { id: 'ozet', label: 'Vaka Ã–zeti', icon: FileText },
+    { id: 'tedavi', label: 'YaklaÅŸÄ±m Ã–nerileri', icon: Zap },
+    { id: 'uyarilar', label: 'Acil UyarÄ±lar', icon: ShieldAlert },
+  ];
+
+  return (
+    <nav className={`absolute lg:relative z-20 w-64 h-full bg-slate-900 border-r border-slate-800 flex flex-col py-4 transition-transform duration-300 ${
+      isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+    }`}>
+      <div className="flex-1 overflow-y-auto">
+        {menuItems.map((item) => (
+          <button
+            key={item.id}
+            onClick={() => { setActiveTab(item.id); setIsMobileMenuOpen(false); }}
+            className={`w-full flex items-center gap-3 px-6 py-3 text-sm font-medium transition-all ${
+              activeTab === item.id 
+                ? 'text-cyan-400 bg-cyan-500/10 border-r-2 border-cyan-400' 
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+            }`}
+          >
+            <item.icon className={`w-5 h-5 ${activeTab === item.id ? 'text-cyan-400' : 'text-slate-500'}`} />
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-auto px-6 pt-4 border-t border-slate-800">
+        <div className="text-xs text-slate-600 font-mono mb-2">PLUGIN SANDBOX</div>
+        <div className="space-y-2">
+          {mockData.pluginStatusData.map((plugin, idx) => (
+            <div key={idx} className="flex items-center justify-between text-xs">
+              <span className="text-slate-400 truncate pr-2">{plugin.name}</span>
+              <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase border ${
+                plugin.active ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-slate-800 text-slate-500 border-slate-700'
+              }`}>
+                {plugin.mode}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+function RightSynthesisPanel({ onExportRequest }) {
+  return (
+    <aside className="w-full lg:w-80 bg-slate-900 border-l border-slate-800 flex flex-col shrink-0">
+      <div className="p-5 flex-1 overflow-y-auto space-y-6">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-400 mb-3 uppercase tracking-wider">Klinik DeÄŸerlendirme</h3>
+          <div className="bg-slate-950 border border-slate-800 rounded-lg p-4 space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-slate-400">Genel KanÄ±t GÃ¼cÃ¼:</span>
+              <span className="text-sm font-bold text-emerald-400">%82 (Kuvvetli)</span>
+            </div>
+            <div className="flex justify-between items-center border-t border-slate-800 pt-2">
+              <span className="text-sm text-slate-400">Bekleyen Veri:</span>
+              <span className="text-sm font-bold text-amber-400">Eko, BNP</span>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-semibold text-slate-400 mb-3 uppercase tracking-wider">Klinik Uyum Tablosu</h3>
+          <div className="space-y-2">
+            {mockData.riskSummaryData.probabilities.map((item, idx) => (
+              <div key={idx} className="bg-slate-950 border border-slate-800 rounded-lg p-3 relative overflow-hidden group">
+                <div className="flex justify-between items-center mb-2 relative z-10">
+                  <span className="text-xs font-medium text-slate-200">{item.title}</span>
+                  <span className="text-xs font-mono text-cyan-400">Uyum: %{item.probability}</span>
+                </div>
+                <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden relative z-10">
+                  <div className="h-full bg-cyan-500" style={{ width: `${item.probability}%` }}></div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 text-[10px] text-slate-500 text-center uppercase tracking-widest border border-dashed border-slate-700 p-1 rounded">
+            Uzman DoÄŸrulamasÄ± Gerektirir
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-semibold text-slate-400 mb-3 uppercase tracking-wider">Destekleyici / ZayÄ±flatÄ±cÄ±</h3>
+          <div className="space-y-2 text-sm bg-slate-950/50 p-3 rounded-lg border border-slate-800">
+            <div className="flex gap-2 items-start"><CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0"/> <span className="text-slate-300 text-xs">TaÅŸikardi ve hipoksi (SIM) klinik tablo ile uyumlu.</span></div>
+            <div className="flex gap-2 items-start"><CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0"/> <span className="text-slate-300 text-xs">EKG Patern analizi (SIM) riski destekliyor.</span></div>
+            <div className="flex gap-2 items-start"><XCircle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0"/> <span className="text-slate-300 text-xs">Troponin yÃ¼ksekliÄŸi sÄ±nÄ±rlÄ± seviyede.</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-4 border-t border-slate-800 bg-slate-950/50">
+        <button 
+          onClick={onExportRequest}
+          className="w-full relative group overflow-hidden rounded-lg bg-cyan-500/10 border border-cyan-500 hover:bg-cyan-500/20 transition-all p-3 text-cyan-400 font-semibold shadow-[0_0_15px_rgba(6,182,212,0.2)]"
+        >
+          <span className="relative z-10 flex items-center justify-center gap-2 text-sm">
+            <Download className="w-4 h-4" />
+            JIFRAF'A Ã–ZET AKTAR (SNAPSHOT)
+          </span>
+          <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-cyan-400/10 to-transparent -translate-x-full group-hover:animate-shimmer"></div>
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function EvidenceTimeline({ evidence }) {
+  return (
+    <div className="h-32 lg:h-36 bg-slate-900 border-t border-slate-800 p-4 flex flex-col shrink-0">
+      <h3 className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wider flex items-center gap-2">
+        <Clock className="w-3 h-3" /> KanÄ±t Zinciri & Karar AkÄ±ÅŸÄ± (Audit Trail)
+      </h3>
+      <div className="flex-1 flex items-center gap-4 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-slate-700 px-2">
+        {evidence.map((item, idx) => (
+          <React.Fragment key={item.id}>
+            <div className={`flex flex-col justify-center min-w-[150px] h-16 px-3 rounded-lg border shrink-0 relative ${
+              item.type === 'alert' ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.3)]' :
+              item.type === 'danger' ? 'bg-red-500/10 border-red-500/50 text-red-400' :
+              item.type === 'warning' ? 'bg-amber-500/10 border-amber-500/50 text-amber-400' :
+              'bg-slate-800 border-slate-600 text-slate-300'
+            }`}>
+              <div className="flex justify-between items-start mb-1">
+                <span className="text-[10px] opacity-70 font-mono">{item.time}</span>
+                {item.simulated && <span className="text-[8px] border border-current px-1 rounded uppercase opacity-80">SIM</span>}
+              </div>
+              <span className="text-xs font-semibold leading-tight truncate">{item.title}</span>
+              <span className="text-[9px] opacity-60 mt-1 truncate">Src: {item.source_type} (Conf: {item.confidence})</span>
+            </div>
+            {idx < evidence.length - 1 && <div className="h-px w-6 lg:w-8 bg-slate-700 shrink-0"></div>}
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* --- ROUTER & PANELS --- */
+
+function MainPanelRouter({ activeTab }) {
+  return (
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={activeTab}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -10 }}
+        transition={{ duration: 0.2 }}
+        className="h-full"
+      >
+        <PanelErrorBoundary>
+          {activeTab === 'anamnez' && <AnamnesisPanel />}
+          {activeTab === 'ekg' && <EkgPanel />}
+          {activeTab === 'steteskop' && <AuscultationPanel />}
+          {activeTab === 'radyoloji' && <RadiologyPanel />}
+          {activeTab === 'lab' && <LabPanel />}
+          {activeTab === 'endikasyon' && <IndicationPanel />}
+          {activeTab === 'tedavi' && <TreatmentSuggestionPanel />}
+          {activeTab === 'uyarilar' && <EmergencyWarningPanel />}
+          {activeTab === 'ozet' && <CaseSummaryPanel />}
+        </PanelErrorBoundary>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+function AnamnesisPanel() {
+  const data = mockData.anamnesisData;
+  return (
+    <div className="space-y-6">
+      <PanelHeader icon={ClipboardList} title="Anamnez & Hikaye" />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <PanelField label="Ana Åikayet" value={data.chiefComplaint} highlight />
+        <PanelField label="BaÅŸlangÄ±Ã§ ZamanÄ±" value={data.onset} />
+        <PanelField label="AÄŸrÄ± Tipi" value={data.painType} highlight />
+        <PanelField label="GeÃ§miÅŸ HastalÄ±klar" value={data.history} warning />
+        <PanelField label="KullandÄ±ÄŸÄ± Ä°laÃ§lar" value={data.medication} warning />
+      </div>
+      <div className="mt-4 p-4 rounded-lg border border-slate-800 bg-slate-900/50 relative">
+        <div className="absolute top-2 right-2 text-[10px] text-cyan-500 border border-cyan-500/30 px-1 rounded">SIMULATED NLP</div>
+        <label className="text-xs text-slate-500 mb-2 block">NLP Ã‡Ä±karÄ±m Notu (Taslak DeÄŸerlendirme)</label>
+        <p className="text-sm text-slate-300 leading-relaxed">{data.nlpSummary}</p>
+      </div>
+    </div>
+  );
+}
+
+function EkgPanel() {
+  return (
+    <div className="space-y-6 h-full flex flex-col">
+      <PanelHeader icon={HeartPulse} title="EKG Analizi GÃ¶zlemi (Mock)" badge="Cihaz BaÄŸlÄ± (SIM)" badgeType="pulse" />
+      <div className="w-full h-48 bg-slate-950 border border-slate-800 rounded-lg relative overflow-hidden flex items-center justify-center group">
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(30,41,59,0.5)_1px,transparent_1px),linear-gradient(90deg,rgba(30,41,59,0.5)_1px,transparent_1px)] bg-[size:20px_20px] opacity-20"></div>
+        <div className="absolute top-2 right-2 bg-slate-900/80 px-2 py-1 rounded text-[10px] text-cyan-400 font-mono border border-cyan-500/30 z-10">MOCK UPLOAD ZONE</div>
+        <p className="text-slate-500 font-mono text-sm z-10">[EKG Veri DosyasÄ± Bekleniyor...]</p>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <PanelField label="Ritim (OlasÄ±)" value="SinÃ¼s TaÅŸikardisi" warning />
+        <PanelField label="HÄ±z" value="124 bpm" warning />
+        <PanelField label="Eksen" value="SaÄŸ Aks SapmasÄ±" warning />
+        <PanelField label="Ã–zel Bulgu" value="S1 Q3 T3 Paterni" warning />
+      </div>
+    </div>
+  );
+}
+
+function AuscultationPanel() {
+  return (
+    <div className="space-y-6">
+      <PanelHeader icon={Stethoscope} title="OskÃ¼ltasyon (Akustik Analiz)" />
+      <div className="flex flex-col md:flex-row gap-6">
+        <div className="w-full md:w-1/3 space-y-4">
+          <button className="w-full flex items-center justify-center gap-2 py-3 bg-slate-900 border border-slate-700 rounded-lg hover:border-cyan-500 text-sm text-slate-300">
+            <PlayCircle className="w-4 h-4 text-cyan-400" /> Mock Kalp Sesi YÃ¼kle
+          </button>
+        </div>
+        <div className="flex-1 bg-slate-900/50 border border-slate-800 rounded-lg p-6 flex flex-col items-center justify-center text-center relative">
+          <div className="absolute top-2 right-2 text-[10px] text-cyan-500 border border-cyan-500/30 px-1 rounded">SIMULATED AUDIO</div>
+          <div className="flex items-end gap-1 mb-6 h-16">
+            {mockAudioBars.map((height, i) => (
+              <div key={i} className="w-2 bg-cyan-500/50 rounded-t-sm transition-all duration-300 hover:h-full" style={{ height: `${height}%` }}></div>
+            ))}
+          </div>
+          <h3 className="text-slate-300 font-medium">Akustik Sinyal Ä°ÅŸleme (SimÃ¼le EdilmiÅŸ)</h3>
+          <p className="text-sm text-slate-500 mt-2">SaÄŸ bazalde solunum sesleri azalmÄ±ÅŸ olabilir. Raller veya wheezing belirgin deÄŸil.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RadiologyPanel() {
+  return (
+    <div className="space-y-6">
+      <PanelHeader icon={FileSearch} title="Radyoloji & GÃ¶rÃ¼ntÃ¼ Ä°ÅŸleme" badge="ModÃ¼l: Toraks BT (SIM)" />
+      <div className="flex flex-col lg:flex-row gap-4 h-[400px]">
+        <div className="w-full lg:w-2/3 bg-black border border-slate-800 rounded-lg relative overflow-hidden flex items-center justify-center">
+          <div className="absolute top-2 right-2 bg-slate-900/80 px-2 py-1 rounded text-[10px] text-cyan-400 font-mono border border-cyan-500/30 z-10">DICOM UPLOAD PLACEHOLDER</div>
+          <FileSearch className="w-12 h-12 text-slate-700" />
+        </div>
+        <div className="w-full lg:w-1/3 flex flex-col gap-3">
+          <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg flex-1 relative">
+             <div className="absolute top-2 right-2 text-[10px] text-cyan-500 border border-cyan-500/30 px-1 rounded">SIMULATED AI</div>
+            <h4 className="text-xs text-slate-500 uppercase tracking-wider mb-3">OlasÄ± Vision Ã‡Ä±karÄ±mlarÄ±</h4>
+            <ul className="space-y-3">
+              <li className="text-sm border-l-2 border-red-500 pl-3">
+                <span className="text-slate-300">SaÄŸ ana pulmoner arterde dolum defekti uyumlu gÃ¶rÃ¼nÃ¼m.</span>
+              </li>
+              <li className="text-sm border-l-2 border-amber-500 pl-3">
+                <span className="text-slate-300">SaÄŸ ventrikÃ¼l dilatasyonu ÅŸÃ¼phesi.</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LabPanel() {
+  return (
+    <div className="space-y-6">
+      <PanelHeader icon={Syringe} title="Laboratuvar Verileri" />
+      <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden overflow-x-auto">
+        <table className="w-full text-sm text-left min-w-[600px]">
+          <thead className="bg-slate-950/50 text-slate-400 font-mono text-xs uppercase">
+            <tr>
+              <th className="px-4 py-3">Tetkik AdÄ±</th>
+              <th className="px-4 py-3">SonuÃ§</th>
+              <th className="px-4 py-3">Birim</th>
+              <th className="px-4 py-3">Referans</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800 text-slate-300">
+            {mockData.labData.map((lab, i) => (
+              <tr key={i} className="hover:bg-slate-800/30">
+                <td className="px-4 py-3 font-medium">{lab.name}</td>
+                <td className={`px-4 py-3 font-mono ${lab.status === 'critical' ? 'text-red-400 font-bold' : lab.status === 'high' ? 'text-amber-400' : ''}`}>{lab.result}</td>
+                <td className="px-4 py-3 text-slate-500">{lab.unit}</td>
+                <td className="px-4 py-3 text-slate-500">{lab.refRange}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function IndicationPanel() {
+  return (
+    <div className="space-y-6">
+      <PanelHeader icon={Crosshair} title="Endikasyon DeÄŸerlendirmesi" />
+      <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-lg text-sm text-slate-300">
+        <p className="mb-4 text-cyan-400"><strong>Hesaplanan Klinik Skorlamalar (SimÃ¼le)</strong></p>
+        <ul className="space-y-2 list-disc pl-5 opacity-90">
+          <li>Wells Skoru: YÃ¼ksek OlasÄ±lÄ±k (&gt;6 puan)</li>
+          <li>Geneva Skoru: YÃ¼ksek OlasÄ±lÄ±k</li>
+          <li>PESI Skoru: SÄ±nÄ±f IV (YÃ¼ksek Risk)</li>
+        </ul>
+        <div className="mt-6 p-3 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded text-xs flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <p>Klinik tablolar algoritmik hesaplamadÄ±r. Ä°leri tanÄ± testleri (Ã¶rn. BT Anjiyografi) ile uzman onayÄ± gerektirir.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TreatmentSuggestionPanel() {
+  return (
+    <div className="space-y-6">
+      <PanelHeader icon={Zap} title="YaklaÅŸÄ±m ve Ã–neriler" />
+      <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-lg text-sm text-slate-300">
+        <p className="mb-4"><strong>KÄ±lavuz Uyumlu YaklaÅŸÄ±m SeÃ§enekleri (Referans AmaÃ§lÄ±dÄ±r)</strong></p>
+        <div className="space-y-4">
+          <div className="p-3 border border-slate-700 bg-slate-800/50 rounded">
+            <h5 className="font-semibold text-cyan-400 mb-1">Birincil Destekleyici AdÄ±mlar</h5>
+            <p className="text-xs text-slate-400">Oksijen desteÄŸi optimizasyonu (SpO2 &gt; %92 hedeflenmesi deÄŸerlendirilebilir).</p>
+          </div>
+          <div className="p-3 border border-slate-700 bg-slate-800/50 rounded">
+            <h5 className="font-semibold text-cyan-400 mb-1">Farmakolojik DeÄŸerlendirme Ã‡erÃ§evesi</h5>
+            <p className="text-xs text-slate-400">Kontrendikasyon yoksa antikoagÃ¼lan tedavinin yeniden baÅŸlanmasÄ± uzman hekimce deÄŸerlendirilebilir.</p>
+          </div>
+        </div>
+        <div className="mt-6 p-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded text-xs flex items-start gap-2">
+          <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+          <p>DÄ°KKAT: Bu sistem tedavi emri veremez. Sunulan farmakolojik ajanlar ve dozajlar, genel kÄ±lavuz verileridir ve hastaya Ã¶zel klinik karar sÃ¼recinin yerine geÃ§emez.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmergencyWarningPanel() {
+  return (
+    <div className="space-y-6">
+      <PanelHeader icon={ShieldAlert} title="Acil UyarÄ±lar ve Risk BayraklarÄ±" badge="3 Aktif UyarÄ±" badgeType="pulse-red" />
+      <div className="grid gap-4">
+        <div className="bg-red-950/30 border border-red-500/50 p-4 rounded-lg flex gap-4 items-start">
+          <AlertTriangle className="w-6 h-6 text-red-500 shrink-0 mt-1" />
+          <div>
+            <h4 className="font-bold text-red-400 mb-1">Akut Hipoksi ve Hemodinamik Stres ÅÃ¼phesi</h4>
+            <p className="text-sm text-red-300/80">HastanÄ±n vital bulgularÄ±nda ani bozulma potansiyeli yÃ¼ksektir. Acil gÃ¶zlem gerektirebilir.</p>
+          </div>
+        </div>
+        <div className="bg-amber-950/30 border border-amber-500/50 p-4 rounded-lg flex gap-4 items-start">
+          <FileWarning className="w-6 h-6 text-amber-500 shrink-0 mt-1" />
+          <div>
+            <h4 className="font-bold text-amber-400 mb-1">Ä°laÃ§ EtkileÅŸim / Kesinti Riski</h4>
+            <p className="text-sm text-amber-300/80">AntikoagÃ¼lan (Apiksaban) kullanÄ±mÄ±nÄ±n 2 ay Ã¶nce kesilmiÅŸ olmasÄ± mevcut klinik tablo riskini artÄ±rmaktadÄ±r.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CaseSummaryPanel() {
+  return (
+    <div className="space-y-6">
+      <PanelHeader icon={FileText} title="SentezlenmiÅŸ Vaka Ã–zeti (Taslak)" />
+      <div className="bg-slate-900/80 border border-slate-700 p-6 rounded-lg">
+        <div className="prose prose-invert prose-sm max-w-none text-slate-300">
+          <p><strong>Gateway KaynaÄŸÄ±:</strong> JIFRAF Ã‡ekirdek UygulamasÄ±</p>
+          <p><strong>Klinik Ã–zet:</strong> Hasta ani baÅŸlayan nefes darlÄ±ÄŸÄ± ve plÃ¶retik saÄŸ yan aÄŸrÄ±sÄ± ÅŸikayeti ile baÅŸvurdu. Vital bulgularda taÅŸikardi (124 bpm) ve hafif hipoksi (SpO2 %92) gÃ¶zlendi.</p>
+          <p><strong>Laboratuvar / GÃ¶rÃ¼ntÃ¼leme (SimÃ¼le):</strong> D-Dimer seviyesi belirgin yÃ¼ksek (3450 ng/mL). SimÃ¼le EKG'de S1Q3T3 paterni uyumlu sinyaller tespit edildi. Radyolojik Ã¶n deÄŸerlendirme saÄŸ pulmoner arterde dolum defektine iÅŸaret etmektedir.</p>
+          <p><strong>Karar Destek Ã‡Ä±karÄ±mÄ±:</strong> Mevcut veri seti, Pulmoner Emboli tablosu ile yÃ¼ksek dÃ¼zeyde klinik uyum gÃ¶stermektedir (%78). Uzman hekim tarafÄ±ndan ileri tetkik ve kesin deÄŸerlendirme yapÄ±lmasÄ± aciliyet arz edebilir.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* --- UTILITIES & SUB-COMPONENTS --- */
+
+function PanelHeader({ icon: Icon, title, badge, badgeType }) {
+  return (
+    <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+      <h2 className="text-base lg:text-lg font-medium text-slate-100 flex items-center gap-2">
+        <Icon className="w-5 h-5 text-cyan-400" />
+        {title}
+      </h2>
+      {badge && (
+        <div className={`px-2 lg:px-3 py-1 rounded text-[10px] lg:text-xs flex items-center gap-1 ${
+          badgeType === 'pulse' ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 animate-pulse' : 
+          badgeType === 'pulse-red' ? 'bg-red-500/10 border border-red-500/30 text-red-400 animate-pulse' :
+          'bg-slate-800 text-slate-400'
+        }`}>
+          {badgeType?.includes('pulse') && <Radio className="w-3 h-3" />} {badge}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PanelField({ label, value, highlight = false, warning = false }) {
+  const bg = highlight ? "bg-cyan-950/30" : warning ? "bg-red-950/20" : "bg-slate-900";
+  const border = highlight ? "border-cyan-500/30" : warning ? "border-red-500/30" : "border-slate-800";
+  const textColor = highlight ? "text-cyan-300" : warning ? "text-red-300" : "text-slate-300";
+
+  return (
+    <div className={`p-3 rounded-lg border ${bg} ${border}`}>
+      <label className="text-[10px] lg:text-[11px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">{label}</label>
+      <div className={`text-xs lg:text-sm font-medium ${textColor}`}>{value}</div>
+    </div>
+  );
+}
+
+function VitalCard({ title, value, unit, status, icon: Icon }) {
+  const colors = { normal: 'text-emerald-400', high: 'text-red-400', low: 'text-amber-400', warning: 'text-amber-400' };
+  return (
+    <div className="flex flex-col justify-center px-4 py-2 bg-slate-950/30">
+      <div className="flex items-center gap-1.5 text-slate-500 text-xs mb-1">
+        <Icon className="w-3 h-3" /> {title}
+      </div>
+      <div className="flex items-baseline gap-1">
+        <span className={`text-lg lg:text-xl font-bold tracking-tight ${colors[status]}`}>{value}</span>
+        <span className="text-[10px] lg:text-xs text-slate-500 font-mono">{unit}</span>
+      </div>
+    </div>
+  );
+}
+
+function HumanApprovalModal({ onConfirm, onCancel }) {
+  const [approvalChecked, setApprovalChecked] = useState(false);
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4"
+    >
+      <div className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden flex flex-col">
+        <div className="bg-amber-500/10 p-4 border-b border-amber-500/30 flex items-start gap-3 text-amber-400">
+          <AlertTriangle className="w-6 h-6 shrink-0 mt-1" />
+          <div>
+            <h3 className="font-bold mb-1">Export OnayÄ± & Yasal UyarÄ±</h3>
+            <p className="text-xs text-amber-300/80">JIFRAF ana sistemine aktarÄ±lacak olan 'VersionedCaseSnapshot' klinik bir tanÄ± veya tedavi emri deÄŸildir.</p>
+          </div>
+        </div>
+        
+        <div className="p-6 space-y-4 flex-1">
+          <div className="bg-slate-950 border border-slate-800 rounded p-3 text-xs text-slate-300 font-mono">
+            <div><span className="text-slate-500">Target:</span> JIFRAF Core Gateway</div>
+            <div><span className="text-slate-500">Payload:</span> Evidence Chain, Risk Synthesis</div>
+            <div><span className="text-slate-500">Disclaimer:</span> NOT_FOR_CLINICAL_USE</div>
+          </div>
+          
+          <label className="flex items-start gap-3 cursor-pointer group" onClick={() => setApprovalChecked(!approvalChecked)}>
+            <div className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+              approvalChecked ? 'bg-cyan-500/20 border-cyan-400' : 'border-cyan-500/50 group-hover:bg-cyan-500/10'
+            }`}>
+              {approvalChecked && <CheckSquare className="w-4 h-4 text-cyan-400" />}
+            </div>
+            <span className="text-sm text-slate-300 select-none">
+              Bu Ã§Ä±ktÄ±nÄ±n yalnÄ±zca karar-destek ve asistan amaÃ§lÄ± olduÄŸunu, uzman hekim onayÄ±nÄ±n zorunlu olduÄŸunu anladÄ±m ve kabul ediyorum.
+            </span>
+          </label>
+        </div>
+
+        <div className="p-4 border-t border-slate-800 bg-slate-950 flex justify-end gap-3">
+          <button onClick={onCancel} className="px-4 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors">
+            Ä°ptal
+          </button>
+          <button 
+            onClick={onConfirm} 
+            disabled={!approvalChecked}
+            className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${
+              approvalChecked 
+                ? 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-[0_0_15px_rgba(6,182,212,0.4)]' 
+                : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+            }`}
+          >
+            Onayla ve Aktar
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
