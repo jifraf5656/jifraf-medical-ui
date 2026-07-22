@@ -8189,7 +8189,7 @@ export default function JifrafFuturisticApp() {
               </div>
             )}
 
-            {activeTab !== 'anamnez' && activeTab !== 'radyoloji' && activeTab !== 'ekg' && activeTab !== 'steteskop' && activeTab !== 'ozet' && activeTab !== 'intake' && activeTab !== 'tanilar' && activeTab !== 'tedavi' && (
+            {activeTab !== 'anamnez' && activeTab !== 'lab' && activeTab !== 'radyoloji' && activeTab !== 'ekg' && activeTab !== 'steteskop' && activeTab !== 'ozet' && activeTab !== 'intake' && activeTab !== 'tanilar' && activeTab !== 'tedavi' && activeTab !== 'konsultasyon' && activeTab !== 'uyarilar' && (
               <div className="flex-1 border border-cyan-500/60 rounded-xl bg-slate-900/30 flex items-center justify-center flex-col shadow-[0_0_15px_rgba(6,182,212,0.15)]">
                 <Crosshair className="w-12 h-12 text-cyan-800 mb-4 animate-pulse" />
                 <h2 className="text-cyan-600 text-lg uppercase tracking-widest">{activeTab} Paneli</h2>
@@ -11019,6 +11019,7 @@ function UploadPanel({
   files = [], 
   onFileDrop,
   handleFileChange,
+  fileInputRef,
   loading,
   showFileCards = true,
   category = 'genel',
