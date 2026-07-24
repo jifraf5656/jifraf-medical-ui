@@ -1031,6 +1031,9 @@ export default function JifrafFuturisticApp() {
   const [draggingStethIndex, setDraggingStethIndex] = useState(null);
   const [dragStethOffset, setDragStethOffset] = useState({ x: 0, y: 0 });
   const [stethAiSummaryBalloon, setStethAiSummaryBalloon] = useState(null);
+  const stethAudioRef = useRef(null);
+  const [stethCurrentTime, setStethCurrentTime] = useState(0);
+  const [stethAudioDuration, setStethAudioDuration] = useState(0);
   const [stethAiConsulting, setStethAiConsulting] = useState(false);
 
   const getEkgSvgCoords = (e) => {
@@ -5385,15 +5388,65 @@ export default function JifrafFuturisticApp() {
                   </div>
 
                   <audio 
+                    ref={stethAudioRef}
                     controls 
                     autoPlay
                     src={activeStethFile.preview_url} 
+                    onTimeUpdate={(e) => setStethCurrentTime(e.target.currentTime)}
+                    onLoadedMetadata={(e) => setStethAudioDuration(e.target.duration)}
                     className="w-full h-11 rounded-lg accent-amber-500 font-mono shadow-inner"
                   />
 
-                  <div className="text-left text-[11px] font-mono text-slate-300 bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1">
-                    <div className="text-amber-400 font-bold truncate">📁 {activeStethFile.original_filename || activeStethFile.local_file_name}</div>
-                    <div className="text-[10px] text-slate-400">Kayıt/Yükleme Zamanı: {new Date(activeStethFile.uploaded_at || Date.now()).toLocaleTimeString()}</div>
+                  {/* Interactive Time-stamped Markers & JIF-GO AI Sound Focus Analysis */}
+                  <div className="flex flex-col gap-2 text-left font-mono">
+                    <div className="flex items-center justify-between text-[11px] bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
+                      <div className="truncate text-amber-400 font-bold">📁 {activeStethFile.original_filename || activeStethFile.local_file_name}</div>
+                      <div className="text-[10px] text-slate-400 shrink-0 ml-2">⏱️ {Math.floor(stethCurrentTime)}s / {Math.floor(stethAudioDuration || 0)}s</div>
+                    </div>
+
+                    {/* Marked Focus Points List for One-Click Replay */}
+                    {stethAnnotations.length > 0 && (
+                      <div className="bg-amber-950/40 border border-amber-500/50 rounded-xl p-3 flex flex-col gap-2">
+                        <div className="text-xs font-bold text-amber-300 flex items-center justify-between border-b border-amber-900/50 pb-1.5">
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                            📍 İŞARETLİ SES ODAKLARI ({stethAnnotations.length} Adet)
+                          </span>
+                          <span className="text-[9px] text-slate-400 font-normal">Tıkla & Oraya Git</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {stethAnnotations.map((ann, idx) => {
+                            const markerSec = Math.round((ann.cx / 1000) * (stethAudioDuration || 10));
+                            return (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => {
+                                  if (stethAudioRef.current) {
+                                    stethAudioRef.current.currentTime = markerSec;
+                                    stethAudioRef.current.play();
+                                  }
+                                }}
+                                className="flex items-center gap-1 px-2.5 py-1 bg-amber-900/60 hover:bg-amber-700 text-amber-200 border border-amber-500/60 rounded-lg text-[10px] font-bold cursor-pointer transition-all hover:scale-105"
+                                title={`Odak #${idx + 1} (${markerSec}. saniyeye git ve tekrar dinle)`}
+                              >
+                                <span>▶️ Odak #{idx + 1} ({markerSec}s)</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* JIF-GO AI Sound Consultation Trigger Button */}
+                    <button
+                      type="button"
+                      onClick={runStethFocusedAdvisory}
+                      className="w-full flex items-center justify-center gap-2 py-2 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-slate-950 font-bold text-xs uppercase tracking-wider rounded-xl shadow-[0_0_15px_rgba(245,158,11,0.5)] cursor-pointer transition-all hover:scale-[1.02]"
+                    >
+                      <BrainCircuit className="w-4 h-4 text-slate-950 animate-pulse" />
+                      <span>🧠 JIF-GO AI Fikrini Al (İşaretli Ses İncelemesi)</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -5453,6 +5506,16 @@ export default function JifrafFuturisticApp() {
                       >
                         <title>Tıklayıp Sürükleyerek Taşıyın</title>
                       </circle>
+                      <text
+                        x={ann.cx}
+                        y={ann.cy - ann.r - 6}
+                        fill="#fbbf24"
+                        textAnchor="middle"
+                        className="text-[10px] font-mono font-bold select-none pointer-events-none"
+                        style={{ textShadow: '1px 1px 2px #000' }}
+                      >
+                        ⏱️ {Math.round((ann.cx / 1000) * (stethAudioDuration || 10))}s (Odak #{idx + 1})
+                      </text>
                     </g>
                   );
                 } else if (ann.type === 'ruler') {
