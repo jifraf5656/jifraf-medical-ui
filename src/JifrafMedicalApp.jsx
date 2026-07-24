@@ -7,6 +7,7 @@ import {
   Search, Bell, User, Copy, ChevronDown, ChevronUp, Link2, Check, Clock, Shield,
   Globe, Sun, Moon, Monitor, Eye, EyeOff,
   Camera, Mic, Video, FileEdit, Hospital, ToggleLeft, ToggleRight,
+  Keyboard, Move, CornerDownLeft, Delete, Maximize2, Minimize2, ZoomIn,
   Square, Play, Pause, StopCircle, X, Download, FlaskConical, Lock, RefreshCw
 } from 'lucide-react';
 
@@ -811,6 +812,119 @@ export default function JifrafFuturisticApp() {
   const [clinicianImpression, setClinicianImpression] = useState('');
   const [diagnosisNotes, setDiagnosisNotes] = useState('');
 
+  // ── INPUТ BÜYÜTME / GENİŞLETME (ZOOM ON CLICK) STATE ──
+  const [expandedInputInfo, setExpandedInputInfo] = useState(null); // { id, label, value, setter } | null
+
+  const toggleInputZoom = (id, label, value, setter) => {
+    if (expandedInputInfo && expandedInputInfo.id === id) {
+      setExpandedInputInfo(null);
+    } else {
+      setExpandedInputInfo({ id, label, value, setter });
+    }
+  };
+
+  // ── ANAMNEZ BİREYSEL SESLİ GİRDİ VE TAŞINABİLİR SANAL KLAVYE STATES ──
+  const [activeVoiceInputId, setActiveVoiceInputId] = useState(null);
+  const [isVirtualKeyboardOpen, setIsVirtualKeyboardOpen] = useState(false);
+  const [keyboardPos, setKeyboardPos] = useState({ x: 200, y: 120 });
+  const [isDraggingKeyboard, setIsDraggingKeyboard] = useState(false);
+  const [dragKeyboardStart, setDragKeyboardStart] = useState({ x: 0, y: 0 });
+  const [keyboardActiveFieldId, setKeyboardActiveFieldId] = useState('obs_note');
+  const [keyboardActiveSetter, setKeyboardActiveSetter] = useState(null);
+  const [keyboardActiveValue, setKeyboardActiveValue] = useState('');
+  const [keyboardLayoutTab, setKeyboardLayoutTab] = useState('vitals'); // 'vitals' | 'letters'
+  const activeRecognitionRef = useRef(null);
+
+  // Per-input Voice Dictation Toggle Handler (1st click ON, 2nd click OFF)
+  const toggleInputVoice = (fieldId, targetSetter, currentValue, fieldLabel = 'Metin') => {
+    if (activeVoiceInputId === fieldId) {
+      // 2nd click -> Stop listening for this input
+      if (activeRecognitionRef.current) {
+        try { activeRecognitionRef.current.stop(); } catch(e) {}
+        activeRecognitionRef.current = null;
+      }
+      setActiveVoiceInputId(null);
+      setIsListeningVoice(false);
+      return;
+    }
+
+    // Stop any existing active voice recognition
+    if (activeRecognitionRef.current) {
+      try { activeRecognitionRef.current.stop(); } catch(e) {}
+      activeRecognitionRef.current = null;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Tarayıcınız ses tanıma özelliğini desteklememektedir. Lütfen Chrome veya Safari kullanın.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'tr-TR';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      setActiveVoiceInputId(fieldId);
+      setIsListeningVoice(true);
+      setIntakeSuccessMessage(`[${fieldLabel}] Sesli dinleme aktif... Konuşabilirsiniz.`);
+    };
+
+    recognition.onresult = async (event) => {
+      const transcript = event.results[0][0].transcript;
+      if (transcript && targetSetter) {
+        targetSetter(prev => {
+          if (!prev || prev === 'Yok' || prev === '30 dk önce') return transcript;
+          return `${prev} ${transcript}`;
+        });
+        setIntakeSuccessMessage(`[${fieldLabel}] Sesli girdi eklendi: "${transcript}"`);
+        await parseVoiceVitals(transcript);
+      }
+    };
+
+    recognition.onerror = (e) => {
+      console.error(e);
+      setActiveVoiceInputId(null);
+      setIsListeningVoice(false);
+    };
+
+    recognition.onend = () => {
+      setActiveVoiceInputId(null);
+      setIsListeningVoice(false);
+    };
+
+    activeRecognitionRef.current = recognition;
+    try {
+      recognition.start();
+    } catch(err) {
+      console.error("Speech recognition start failed:", err);
+      setActiveVoiceInputId(null);
+      setIsListeningVoice(false);
+    }
+  };
+
+  // Virtual Keyboard Input Focus Listener Helper
+  const handleFieldFocusForKeyboard = (fieldId, setterFunc, currentValue) => {
+    setKeyboardActiveFieldId(fieldId);
+    setKeyboardActiveSetter(() => setterFunc);
+    setKeyboardActiveValue(currentValue || '');
+  };
+
+  // Virtual Keyboard Key Press Handler
+  const handleVirtualKeyPress = (keyVal) => {
+    if (!keyboardActiveSetter) return;
+    if (keyVal === 'BACKSPACE') {
+      keyboardActiveSetter(prev => (prev && prev.length > 0 ? prev.slice(0, -1) : ''));
+    } else if (keyVal === 'CLEAR') {
+      keyboardActiveSetter('');
+    } else if (keyVal === 'SPACE') {
+      keyboardActiveSetter(prev => (prev ? prev + ' ' : ' '));
+    } else {
+      keyboardActiveSetter(prev => (prev ? prev + keyVal : keyVal));
+    }
+  };
+
   // Mini Phase: User Preferences States (Turkish, English, German, French, Arabic, Kurdish)
   const [language, setLanguage] = useState(() => localStorage.getItem('preferredLanguage') || 'tr');
   const [theme, setTheme] = useState(() => localStorage.getItem('preferredTheme') || 'dark');
@@ -862,6 +976,10 @@ export default function JifrafFuturisticApp() {
   const [dragRadOffset, setDragRadOffset] = useState({ x: 0, y: 0 });
   const [radAiSummaryBalloon, setRadAiSummaryBalloon] = useState(null);
   const [radAiConsulting, setRadAiConsulting] = useState(false);
+  const [radCTRMode, setRadCTRMode] = useState(false);
+  const [showCTRHelpModal, setShowCTRHelpModal] = useState(false);
+  const [radCTRPoints, setRadCTRPoints] = useState([]);
+  const [radCTRResult, setRadCTRResult] = useState(null);
 
   // Stethoscope Interactive Workspace States & Handlers
   const [stethTool, setStethTool] = useState(null);
@@ -877,10 +995,26 @@ export default function JifrafFuturisticApp() {
   const [stethAiSummaryBalloon, setStethAiSummaryBalloon] = useState(null);
   const [stethAiConsulting, setStethAiConsulting] = useState(false);
 
-  const handleEKGMouseDown = (e) => {
+  const getEkgSvgCoords = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    if (!rect.width || !rect.height) return { x: 0, y: 0 };
+    let clientX = e.clientX;
+    let clientY = e.clientY;
+    if (e.touches && e.touches.length > 0) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else if (e.changedTouches && e.changedTouches.length > 0) {
+      clientX = e.changedTouches[0].clientX;
+      clientY = e.changedTouches[0].clientY;
+    }
+    return {
+      x: ((clientX - rect.left) / rect.width) * 1000,
+      y: ((clientY - rect.top) / rect.height) * 1000
+    };
+  };
+
+  const handleEKGMouseDown = (e) => {
+    const { x, y } = getEkgSvgCoords(e);
     
     if (e.button === 2) {
       setShowEkgToolbar(prev => !prev);
@@ -888,27 +1022,26 @@ export default function JifrafFuturisticApp() {
       return;
     }
 
-    // 1. Right Click (button === 2) handles dragging circle annotations
-    if (e.button === 2) {
-      for (let i = annotations.length - 1; i >= 0; i--) {
-        const ann = annotations[i];
-        if (ann.type === 'circle') {
-          const dist = Math.sqrt((x - ann.cx) ** 2 + (y - ann.cy) ** 2);
-          if (dist <= ann.r + 15) {
-            setDraggingAnnotationIndex(i);
-            setDragOffset({ x: x - ann.cx, y: y - ann.cy });
-            return;
-          }
-        }
-      }
-      setShowEkgToolbar(prev => !prev);
-      setShowPenConfig(false);
-      return; // Right click doesn't trigger drawing
+    if (!showEKGGrid && !showEkgToolbar) {
+      return;
     }
 
-    // 2. Left Click (button === 0) handles standard drawing
+    // 1. ALWAYS check if clicking on or inside an existing circle to DRAG it FIRST!
+    for (let i = annotations.length - 1; i >= 0; i--) {
+      const ann = annotations[i];
+      if (ann.type === 'circle') {
+        const dist = Math.sqrt((x - ann.cx) ** 2 + (y - ann.cy) ** 2);
+        if (dist <= Math.max(ann.r + 20, 35)) {
+          setDraggingAnnotationIndex(i);
+          setDragOffset({ x: x - ann.cx, y: y - ann.cy });
+          return; // Drag existing circle!
+        }
+      }
+    }
+
     if (!ekgTool) return;
 
+    // 2. Clicked on empty space with a drawing tool active
     if (ekgTool === 'pen') {
       setActiveAnnotation({
         type: 'pen',
@@ -919,7 +1052,7 @@ export default function JifrafFuturisticApp() {
         type: 'circle',
         cx: x,
         cy: y,
-        r: 5
+        r: 15
       });
     } else if (ekgTool === 'ruler') {
       setActiveAnnotation({
@@ -933,11 +1066,8 @@ export default function JifrafFuturisticApp() {
   };
 
   const handleEKGMouseMove = (e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const { x, y } = getEkgSvgCoords(e);
 
-    // 1. Handle circle dragging (right click action)
     if (draggingAnnotationIndex !== null) {
       setAnnotations(prev => {
         const next = [...prev];
@@ -952,7 +1082,6 @@ export default function JifrafFuturisticApp() {
       return;
     }
 
-    // 2. Handle drawing active annotations
     if (!activeAnnotation) return;
 
     if (activeAnnotation.type === 'pen') {
@@ -963,7 +1092,7 @@ export default function JifrafFuturisticApp() {
     } else if (activeAnnotation.type === 'circle') {
       const dx = x - activeAnnotation.cx;
       const dy = y - activeAnnotation.cy;
-      const r = Math.max(5, Math.sqrt(dx * dx + dy * dy));
+      const r = Math.max(10, Math.sqrt(dx * dx + dy * dy));
       setActiveAnnotation(prev => ({
         ...prev,
         r
@@ -1037,37 +1166,95 @@ export default function JifrafFuturisticApp() {
 
   // Removed legacy generateProtocolId in favor of clinical protocol system
 
-  // Radiology Mouse Handlers
-  const handleRadMouseDown = (e) => {
+    // Radiology Toolbar Toggle & Reset Helper
+  const toggleRadToolbar = () => {
+    setShowRadToolbar(prev => {
+      const next = !prev;
+      if (!next) {
+        setRadCTRMode(false);
+        setRadCTRPoints([]);
+        setRadTool(null);
+      }
+      return next;
+    });
+    setRadShowPenConfig(false);
+  };
+
+  // Radiology Mouse Handlers & Coordinates (0..1000 Normalized SVG Space)
+  const getRadSvgCoords = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    if (!rect.width || !rect.height) return { x: 0, y: 0 };
+    let clientX = e.clientX;
+    let clientY = e.clientY;
+    if (e.touches && e.touches.length > 0) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else if (e.changedTouches && e.changedTouches.length > 0) {
+      clientX = e.changedTouches[0].clientX;
+      clientY = e.changedTouches[0].clientY;
+    }
+    return {
+      x: ((clientX - rect.left) / rect.width) * 1000,
+      y: ((clientY - rect.top) / rect.height) * 1000
+    };
+  };
+
+  const handleRadMouseDown = (e) => {
+    const { x, y } = getRadSvgCoords(e);
     
+    // Right-click: toggle toolbar
     if (e.button === 2) {
-      setShowRadToolbar(prev => !prev);
-      setRadShowPenConfig(false);
+      toggleRadToolbar();
       return;
     }
 
-    if (e.button === 2) {
-      for (let i = radAnnotations.length - 1; i >= 0; i--) {
-        const ann = radAnnotations[i];
-        if (ann.type === 'circle') {
-          const dist = Math.sqrt((x - ann.cx) ** 2 + (y - ann.cy) ** 2);
-          if (dist <= ann.r + 15) {
-            setDraggingRadIndex(i);
-            setDragRadOffset({ x: x - ann.cx, y: y - ann.cy });
-            return;
-          }
+    // If toolbar is NOT open, ignore clicks completely
+    if (!showRadToolbar) {
+      return;
+    }
+
+    // 1. ALWAYS check if clicking on or inside an existing circle to DRAG it FIRST!
+    for (let i = radAnnotations.length - 1; i >= 0; i--) {
+      const ann = radAnnotations[i];
+      if (ann.type === 'circle') {
+        const dist = Math.sqrt((x - ann.cx) ** 2 + (y - ann.cy) ** 2);
+        if (dist <= Math.max(ann.r + 20, 35)) {
+          setDraggingRadIndex(i);
+          setDragRadOffset({ x: x - ann.cx, y: y - ann.cy });
+          return; // Drag existing circle, do NOT create a new one!
         }
       }
-      setShowRadToolbar(prev => !prev);
-      setRadShowPenConfig(false);
+    }
+
+    // 2. If CTR mode is active AND no drawing tool is selected, place CTR points
+    if (radCTRMode && !radTool) {
+      setRadCTRPoints(prev => {
+        const next = [...prev, { x, y }];
+        if (next.length === 4) {
+          const heartLeft = next[0];
+          const heartRight = next[1];
+          const thoraxLeft = next[2];
+          const thoraxRight = next[3];
+          const heartWidth = Math.abs(heartRight.x - heartLeft.x);
+          const thoraxWidth = Math.abs(thoraxRight.x - thoraxLeft.x);
+          const ctr = thoraxWidth > 0 ? (heartWidth / thoraxWidth) : 0;
+          setRadCTRResult({
+            heartLeft, heartRight, thoraxLeft, thoraxRight,
+            heartWidth: (heartWidth * radCalibrationFactor).toFixed(1),
+            thoraxWidth: (thoraxWidth * radCalibrationFactor).toFixed(1),
+            ratio: ctr.toFixed(2),
+            isNormal: ctr <= 0.50
+          });
+          setRadCTRMode(false);
+        }
+        return next;
+      });
       return;
     }
 
     if (!radTool) return;
 
+    // 3. Clicked on empty space with a drawing tool active: create new annotation
     if (radTool === 'pen') {
       setActiveRadAnnotation({
         type: 'pen',
@@ -1078,7 +1265,7 @@ export default function JifrafFuturisticApp() {
         type: 'circle',
         cx: x,
         cy: y,
-        r: 5
+        r: 15
       });
     } else if (radTool === 'ruler') {
       setActiveRadAnnotation({
@@ -1092,9 +1279,7 @@ export default function JifrafFuturisticApp() {
   };
 
   const handleRadMouseMove = (e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const { x, y } = getRadSvgCoords(e);
 
     if (draggingRadIndex !== null) {
       setRadAnnotations(prev => {
@@ -1120,7 +1305,7 @@ export default function JifrafFuturisticApp() {
     } else if (activeRadAnnotation.type === 'circle') {
       const dx = x - activeRadAnnotation.cx;
       const dy = y - activeRadAnnotation.cy;
-      const r = Math.max(5, Math.sqrt(dx * dx + dy * dy));
+      const r = Math.max(10, Math.sqrt(dx * dx + dy * dy));
       setActiveRadAnnotation(prev => ({
         ...prev,
         r
@@ -1135,10 +1320,11 @@ export default function JifrafFuturisticApp() {
   };
 
   const handleRadMouseUp = (e) => {
-    if (e.button === 2 || draggingRadIndex !== null) {
+    if (draggingRadIndex !== null) {
       setDraggingRadIndex(null);
       return;
     }
+    if (e.button === 2) return;
     if (!activeRadAnnotation) return;
     setRadAnnotations(prev => [...prev, { ...activeRadAnnotation, color: radPenColor, width: radPenWidth }]);
     setActiveRadAnnotation(null);
@@ -1193,10 +1379,26 @@ export default function JifrafFuturisticApp() {
   };
 
   // Stethoscope Mouse Handlers
-  const handleStethMouseDown = (e) => {
+  const getStethSvgCoords = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    if (!rect.width || !rect.height) return { x: 0, y: 0 };
+    let clientX = e.clientX;
+    let clientY = e.clientY;
+    if (e.touches && e.touches.length > 0) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else if (e.changedTouches && e.changedTouches.length > 0) {
+      clientX = e.changedTouches[0].clientX;
+      clientY = e.changedTouches[0].clientY;
+    }
+    return {
+      x: ((clientX - rect.left) / rect.width) * 1000,
+      y: ((clientY - rect.top) / rect.height) * 1000
+    };
+  };
+
+  const handleStethMouseDown = (e) => {
+    const { x, y } = getStethSvgCoords(e);
     
     if (e.button === 2) {
       setShowStethToolbar(prev => !prev);
@@ -1204,25 +1406,26 @@ export default function JifrafFuturisticApp() {
       return;
     }
 
-    if (e.button === 2) {
-      for (let i = stethAnnotations.length - 1; i >= 0; i--) {
-        const ann = stethAnnotations[i];
-        if (ann.type === 'circle') {
-          const dist = Math.sqrt((x - ann.cx) ** 2 + (y - ann.cy) ** 2);
-          if (dist <= ann.r + 15) {
-            setDraggingStethIndex(i);
-            setDragStethOffset({ x: x - ann.cx, y: y - ann.cy });
-            return;
-          }
+    if (!showStethGrid && !showStethToolbar) {
+      return;
+    }
+
+    // 1. ALWAYS check if clicking on or inside an existing circle to DRAG it FIRST!
+    for (let i = stethAnnotations.length - 1; i >= 0; i--) {
+      const ann = stethAnnotations[i];
+      if (ann.type === 'circle') {
+        const dist = Math.sqrt((x - ann.cx) ** 2 + (y - ann.cy) ** 2);
+        if (dist <= Math.max(ann.r + 20, 35)) {
+          setDraggingStethIndex(i);
+          setDragStethOffset({ x: x - ann.cx, y: y - ann.cy });
+          return; // Drag existing circle!
         }
       }
-      setShowStethToolbar(prev => !prev);
-      setStethShowPenConfig(false);
-      return;
     }
 
     if (!stethTool) return;
 
+    // 2. Clicked on empty space with a drawing tool active
     if (stethTool === 'pen') {
       setActiveStethAnnotation({
         type: 'pen',
@@ -1233,7 +1436,7 @@ export default function JifrafFuturisticApp() {
         type: 'circle',
         cx: x,
         cy: y,
-        r: 5
+        r: 15
       });
     } else if (stethTool === 'ruler') {
       setActiveStethAnnotation({
@@ -1247,9 +1450,7 @@ export default function JifrafFuturisticApp() {
   };
 
   const handleStethMouseMove = (e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const { x, y } = getStethSvgCoords(e);
 
     if (draggingStethIndex !== null) {
       setStethAnnotations(prev => {
@@ -1275,7 +1476,7 @@ export default function JifrafFuturisticApp() {
     } else if (activeStethAnnotation.type === 'circle') {
       const dx = x - activeStethAnnotation.cx;
       const dy = y - activeStethAnnotation.cy;
-      const r = Math.max(5, Math.sqrt(dx * dx + dy * dy));
+      const r = Math.max(10, Math.sqrt(dx * dx + dy * dy));
       setActiveStethAnnotation(prev => ({
         ...prev,
         r
@@ -1579,8 +1780,10 @@ export default function JifrafFuturisticApp() {
         }
       })
       .catch(err => {
-        console.error("Vaka başlatma hatası:", err);
-        setError("Sistem Başlatılamadı: " + err.message);
+        console.error("Vaka başlatma (Backend bağlantı) hatası:", err);
+        const fallbackId = `ACIL-${Math.floor(1000 + Math.random() * 9000)}-${new Date().toISOString().slice(0,10).replace(/-/g,'')}`;
+        setCaseId(fallbackId);
+        setError(null);
       })
       .finally(() => {
         setLoading(false);
@@ -3191,36 +3394,80 @@ export default function JifrafFuturisticApp() {
     }
   };
 
-  const renderAnamnesisForm = () => {
+    const renderAnamnesisForm = () => {
     return (
-      <div className="flex flex-col min-h-0 h-full p-4 overflow-y-auto [&::-webkit-scrollbar]:hidden font-sans text-slate-300 bg-[#020617]/50 rounded-xl">
+      <div className="flex flex-col min-h-0 h-full p-4 overflow-y-auto [&::-webkit-scrollbar]:hidden font-sans text-slate-300 bg-[#020617]/50 rounded-xl relative">
         <h2 className="text-cyan-400 font-semibold flex items-center justify-between border-b border-cyan-500/30 pb-3 mb-4 shrink-0 text-xs md:text-sm">
           <div className="flex items-center gap-2">
             <ClipboardList className="w-5 h-5 text-cyan-400 animate-pulse" />
             <span>Klinik Anamnez & Fizik Muayene İstasyonu</span>
           </div>
-          <div className="text-[10px] font-mono text-cyan-500 uppercase tracking-widest px-2.5 py-1 rounded bg-cyan-950/30 border border-cyan-800/40">
-            {t("active_protocol")} {clinicalProtocolId}
+          <div className="flex items-center gap-2">
+            {/* Sanal Klavye Pop-up Tetikleyici */}
+            <button
+              type="button"
+              onClick={() => setIsVirtualKeyboardOpen(prev => !prev)}
+              className={`flex items-center gap-1.5 px-3 py-1 text-[10px] font-mono font-bold uppercase rounded border transition-all cursor-pointer ${
+                isVirtualKeyboardOpen 
+                  ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.4)]'
+                  : 'bg-cyan-950/40 border-cyan-500/60 text-cyan-300 hover:bg-cyan-900/50'
+              }`}
+            >
+              <Keyboard className="w-3.5 h-3.5" />
+              <span>{isVirtualKeyboardOpen ? "Sanal Klavye Açık" : "Sanal Klavyeyi Aç"}</span>
+            </button>
+            <div className="text-[10px] font-mono text-cyan-500 uppercase tracking-widest px-2.5 py-1 rounded bg-cyan-950/30 border border-cyan-800/40 hidden md:block">
+              {t("active_protocol")} {clinicalProtocolId}
+            </div>
           </div>
         </h2>
 
         {intakeSuccessMessage && (
-          <div className="bg-emerald-950/30 border border-emerald-500/50 p-3 rounded-lg text-emerald-400 text-xs font-mono mb-4 leading-normal select-text shrink-0">
-            ✅ {intakeSuccessMessage}
+          <div className="bg-emerald-950/30 border border-emerald-500/50 p-3 rounded-lg text-emerald-400 text-xs font-mono mb-4 leading-normal select-text shrink-0 flex items-center justify-between">
+            <span>✅ {intakeSuccessMessage}</span>
+            <button type="button" onClick={() => setIntakeSuccessMessage(null)} className="text-slate-500 hover:text-white text-xs font-bold font-mono">X</button>
           </div>
         )}
 
         {/* TOP SPAN: Hikaye / Başvuru Nedeni */}
-        <div className="mb-4 bg-[#020814]/40 border border-cyan-900/30 p-4 rounded-xl shrink-0">
-          <label className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider block mb-1.5 font-mono">
-            Hikaye / Başvuru Nedeni (Çok satırlı klinik metin)
-          </label>
+        <div className="mb-4 bg-[#020814]/40 border border-cyan-900/30 p-4 rounded-xl shrink-0 relative">
+          <div className="flex justify-between items-center mb-1.5">
+            <label className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider font-mono">
+              Hikaye / Başvuru Nedeni (Çok satırlı klinik metin)
+            </label>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => toggleInputZoom('obs_note', 'Klinik Hikaye', intakeObsNote, setIntakeObsNote)}
+                className="p-1 rounded text-slate-400 hover:text-cyan-300 transition-colors cursor-pointer"
+                title="Genişlet"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleInputVoice('obs_note', setIntakeObsNote, intakeObsNote, 'Klinik Hikaye')}
+                className={`flex items-center gap-1 py-0.5 px-2 rounded text-[9px] font-mono font-bold uppercase border transition-all cursor-pointer ${
+                  activeVoiceInputId === 'obs_note'
+                    ? 'bg-red-950/60 border-red-500 text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.4)] animate-pulse'
+                    : 'bg-cyan-950/30 border-cyan-800/60 text-cyan-400 hover:border-cyan-400'
+                }`}
+              >
+                <Mic className="w-3 h-3" />
+                <span>{activeVoiceInputId === 'obs_note' ? "DİNLENİYOR..." : "Sesle Doldur"}</span>
+              </button>
+            </div>
+          </div>
           <textarea 
             rows={4}
             value={intakeObsNote}
+            onFocus={() => handleFieldFocusForKeyboard('Klinik Hikaye', setIntakeObsNote, intakeObsNote)}
+            onClick={() => toggleInputZoom('obs_note', 'Klinik Hikaye', intakeObsNote, setIntakeObsNote)}
             onChange={(e) => setIntakeObsNote(e.target.value)}
             placeholder="Hastanın şikayeti, hikayesi, başvuru sebebi ve acil triaj gözlemlerini buraya ayrıntılı yazın..."
-            className="w-full bg-[#020814] border border-cyan-900/55 rounded-lg py-2 px-3 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-sans shadow-inner resize-y"
+            className={`w-full bg-[#020814] border rounded-lg py-2 px-3 text-xs text-slate-200 focus:outline-none font-sans shadow-inner resize-y transition-colors cursor-pointer ${
+              activeVoiceInputId === 'obs_note' ? 'border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.2)]' : 'border-cyan-900/55 focus:border-cyan-500'
+            }`}
           />
         </div>
 
@@ -3236,91 +3483,167 @@ export default function JifrafFuturisticApp() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-[9px] text-slate-400 uppercase font-mono block mb-1">Şikayet Başlangıcı</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[9px] text-slate-400 uppercase font-mono">Şikayet Başlangıcı</label>
+                  <div className="flex items-center gap-0.5">
+                    <button type="button" onClick={() => toggleInputZoom('onset', 'Şikayet Başlangıcı', intakeOnset, setIntakeOnset)} className="p-0.5 rounded text-slate-500 hover:text-cyan-300"><Maximize2 className="w-2.5 h-2.5" /></button>
+                    <button
+                      type="button"
+                      onClick={() => toggleInputVoice('onset', setIntakeOnset, intakeOnset, 'Başlangıç')}
+                      className={`p-0.5 rounded border ${activeVoiceInputId === 'onset' ? 'bg-red-950 border-red-500 text-red-400 animate-pulse' : 'text-slate-500 border-slate-800 hover:text-cyan-400'}`}
+                    >
+                      <Mic className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
                 <input 
                   type="text" 
                   value={intakeOnset}
+                  onFocus={() => handleFieldFocusForKeyboard('Şikayet Başlangıcı', setIntakeOnset, intakeOnset)}
+                  onClick={() => toggleInputZoom('onset', 'Şikayet Başlangıcı', intakeOnset, setIntakeOnset)}
                   onChange={(e) => setIntakeOnset(e.target.value)}
                   placeholder="Örn: 30 dk önce"
-                  className="w-full bg-[#020814] border border-cyan-900/55 rounded-lg py-1.5 px-2.5 text-xs text-slate-300 focus:outline-none focus:border-cyan-500 transition-colors"
+                  className={`w-full bg-[#020814] border rounded-lg py-1.5 px-2.5 text-xs text-slate-300 focus:outline-none transition-colors ${
+                    activeVoiceInputId === 'onset' ? 'border-red-500' : 'border-cyan-900/55 focus:border-cyan-500'
+                  }`}
                 />
               </div>
               <div>
-                <label className="text-[9px] text-slate-400 uppercase font-mono block mb-1">Ek Şikayetler</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[9px] text-slate-400 uppercase font-mono">Ek Şikayetler</label>
+                  <div className="flex items-center gap-0.5">
+                    <button type="button" onClick={() => toggleInputZoom('symptoms', 'Ek Şikayetler', intakeAdditionalSymptoms, setIntakeAdditionalSymptoms)} className="p-0.5 rounded text-slate-500 hover:text-cyan-300"><Maximize2 className="w-2.5 h-2.5" /></button>
+                    <button
+                      type="button"
+                      onClick={() => toggleInputVoice('symptoms', setIntakeAdditionalSymptoms, intakeAdditionalSymptoms, 'Ek Şikayetler')}
+                      className={`p-0.5 rounded border ${activeVoiceInputId === 'symptoms' ? 'bg-red-950 border-red-500 text-red-400 animate-pulse' : 'text-slate-500 border-slate-800 hover:text-cyan-400'}`}
+                    >
+                      <Mic className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
                 <input 
                   type="text" 
                   value={intakeAdditionalSymptoms}
+                  onFocus={() => handleFieldFocusForKeyboard('Ek Şikayetler', setIntakeAdditionalSymptoms, intakeAdditionalSymptoms)}
+                  onClick={() => toggleInputZoom('symptoms', 'Ek Şikayetler', intakeAdditionalSymptoms, setIntakeAdditionalSymptoms)}
                   onChange={(e) => setIntakeAdditionalSymptoms(e.target.value)}
                   placeholder="Örn: Baş dönmesi, terleme"
-                  className="w-full bg-[#020814] border border-cyan-900/55 rounded-lg py-1.5 px-2.5 text-xs text-slate-300 focus:outline-none focus:border-cyan-500 transition-colors"
+                  className={`w-full bg-[#020814] border rounded-lg py-1.5 px-2.5 text-xs text-slate-300 focus:outline-none transition-colors ${
+                    activeVoiceInputId === 'symptoms' ? 'border-red-500' : 'border-cyan-900/55 focus:border-cyan-500'
+                  }`}
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-[9px] text-slate-400 uppercase font-mono block mb-1">Özgeçmiş</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[9px] text-slate-400 uppercase font-mono">Özgeçmiş</label>
+                  <div className="flex items-center gap-0.5">
+                    <button type="button" onClick={() => toggleInputZoom('past_history', 'Özgeçmiş', intakePastHistory, setIntakePastHistory)} className="p-0.5 rounded text-slate-500 hover:text-cyan-300"><Maximize2 className="w-2.5 h-2.5" /></button>
+                    <button
+                      type="button"
+                      onClick={() => toggleInputVoice('past_history', setIntakePastHistory, intakePastHistory, 'Özgeçmiş')}
+                      className={`p-0.5 rounded border ${activeVoiceInputId === 'past_history' ? 'bg-red-950 border-red-500 text-red-400 animate-pulse' : 'text-slate-500 border-slate-800 hover:text-cyan-400'}`}
+                    >
+                      <Mic className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
                 <input 
                   type="text" 
                   value={intakePastHistory}
+                  onFocus={() => handleFieldFocusForKeyboard('Özgeçmiş', setIntakePastHistory, intakePastHistory)}
+                  onClick={() => toggleInputZoom('past_history', 'Özgeçmiş', intakePastHistory, setIntakePastHistory)}
                   onChange={(e) => setIntakePastHistory(e.target.value)}
                   placeholder="Örn: Hipertansiyon, KOAH"
-                  className="w-full bg-[#020814] border border-cyan-900/55 rounded-lg py-1.5 px-2.5 text-xs text-slate-300 focus:outline-none focus:border-cyan-500 transition-colors"
+                  className={`w-full bg-[#020814] border rounded-lg py-1.5 px-2.5 text-xs text-slate-300 focus:outline-none transition-colors ${
+                    activeVoiceInputId === 'past_history' ? 'border-red-500' : 'border-cyan-900/55 focus:border-cyan-500'
+                  }`}
                 />
               </div>
               <div>
-                <label className="text-[9px] text-slate-400 uppercase font-mono block mb-1">Soygeçmiş</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[9px] text-slate-400 uppercase font-mono">Soygeçmiş</label>
+                  <div className="flex items-center gap-0.5">
+                    <button type="button" onClick={() => toggleInputZoom('family_history', 'Soygeçmiş', intakeFamilyHistory, setIntakeFamilyHistory)} className="p-0.5 rounded text-slate-500 hover:text-cyan-300"><Maximize2 className="w-2.5 h-2.5" /></button>
+                    <button
+                      type="button"
+                      onClick={() => toggleInputVoice('family_history', setIntakeFamilyHistory, intakeFamilyHistory, 'Soygeçmiş')}
+                      className={`p-0.5 rounded border ${activeVoiceInputId === 'family_history' ? 'bg-red-950 border-red-500 text-red-400 animate-pulse' : 'text-slate-500 border-slate-800 hover:text-cyan-400'}`}
+                    >
+                      <Mic className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
                 <input 
                   type="text" 
                   value={intakeFamilyHistory}
+                  onFocus={() => handleFieldFocusForKeyboard('Soygeçmiş', setIntakeFamilyHistory, intakeFamilyHistory)}
+                  onClick={() => toggleInputZoom('family_history', 'Soygeçmiş', intakeFamilyHistory, setIntakeFamilyHistory)}
                   onChange={(e) => setIntakeFamilyHistory(e.target.value)}
                   placeholder="Örn: Erken yaşta KAH öyküsü"
-                  className="w-full bg-[#020814] border border-cyan-900/55 rounded-lg py-1.5 px-2.5 text-xs text-slate-300 focus:outline-none focus:border-cyan-500 transition-colors"
+                  className={`w-full bg-[#020814] border rounded-lg py-1.5 px-2.5 text-xs text-slate-300 focus:outline-none transition-colors ${
+                    activeVoiceInputId === 'family_history' ? 'border-red-500' : 'border-cyan-900/55 focus:border-cyan-500'
+                  }`}
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-[9px] text-slate-400 uppercase font-mono block mb-1">Kullanılan İlaçlar</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[9px] text-slate-400 uppercase font-mono">Kullanılan İlaçlar</label>
+                  <div className="flex items-center gap-0.5">
+                    <button type="button" onClick={() => toggleInputZoom('medications', 'İlaçlar', intakeMedications, setIntakeMedications)} className="p-0.5 rounded text-slate-500 hover:text-cyan-300"><Maximize2 className="w-2.5 h-2.5" /></button>
+                    <button
+                      type="button"
+                      onClick={() => toggleInputVoice('medications', setIntakeMedications, intakeMedications, 'İlaçlar')}
+                      className={`p-0.5 rounded border ${activeVoiceInputId === 'medications' ? 'bg-red-950 border-red-500 text-red-400 animate-pulse' : 'text-slate-500 border-slate-800 hover:text-cyan-400'}`}
+                    >
+                      <Mic className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
                 <input 
                   type="text" 
                   value={intakeMedications}
+                  onFocus={() => handleFieldFocusForKeyboard('İlaçlar', setIntakeMedications, intakeMedications)}
+                  onClick={() => toggleInputZoom('medications', 'İlaçlar', intakeMedications, setIntakeMedications)}
                   onChange={(e) => setIntakeMedications(e.target.value)}
                   placeholder="Örn: metformin, aspirin"
-                  className="w-full bg-[#020814] border border-cyan-900/55 rounded-lg py-1.5 px-2.5 text-xs text-slate-300 focus:outline-none focus:border-cyan-500 transition-colors"
+                  className={`w-full bg-[#020814] border rounded-lg py-1.5 px-2.5 text-xs text-slate-300 focus:outline-none transition-colors ${
+                    activeVoiceInputId === 'medications' ? 'border-red-500' : 'border-cyan-900/55 focus:border-cyan-500'
+                  }`}
                 />
               </div>
               <div>
-                <label className="text-[9px] text-slate-400 uppercase font-mono block mb-1">Alerjiler</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[9px] text-slate-400 uppercase font-mono">Alerjiler</label>
+                  <div className="flex items-center gap-0.5">
+                    <button type="button" onClick={() => toggleInputZoom('allergies', 'Alerjiler', intakeAllergies, setIntakeAllergies)} className="p-0.5 rounded text-slate-500 hover:text-cyan-300"><Maximize2 className="w-2.5 h-2.5" /></button>
+                    <button
+                      type="button"
+                      onClick={() => toggleInputVoice('allergies', setIntakeAllergies, intakeAllergies, 'Alerjiler')}
+                      className={`p-0.5 rounded border ${activeVoiceInputId === 'allergies' ? 'bg-red-950 border-red-500 text-red-400 animate-pulse' : 'text-slate-500 border-slate-800 hover:text-cyan-400'}`}
+                    >
+                      <Mic className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
                 <input 
                   type="text" 
                   value={intakeAllergies}
+                  onFocus={() => handleFieldFocusForKeyboard('Alerjiler', setIntakeAllergies, intakeAllergies)}
+                  onClick={() => toggleInputZoom('allergies', 'Alerjiler', intakeAllergies, setIntakeAllergies)}
                   onChange={(e) => setIntakeAllergies(e.target.value)}
                   placeholder="Örn: penisilin, kontrast madde"
-                  className="w-full bg-[#020814] border border-cyan-900/55 rounded-lg py-1.5 px-2.5 text-xs text-slate-300 focus:outline-none focus:border-cyan-500 transition-colors"
+                  className={`w-full bg-[#020814] border rounded-lg py-1.5 px-2.5 text-xs text-slate-300 focus:outline-none transition-colors ${
+                    activeVoiceInputId === 'allergies' ? 'border-red-500' : 'border-cyan-900/55 focus:border-cyan-500'
+                  }`}
                 />
               </div>
-            </div>
-
-            {/* Sesli Vital Girişi */}
-            <div className="border-t border-slate-900/50 pt-2 pb-1 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-slate-400 font-mono font-bold uppercase tracking-wider">Sesli Vital Giriş Desteği</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></span>
-              </div>
-              <button
-                type="button"
-                onClick={startSpeechRecognition}
-                className={`flex items-center gap-1.5 px-2.5 py-1 text-[9px] font-bold rounded border tracking-wider transition-all select-none cursor-pointer ${
-                  isListeningVoice 
-                    ? 'bg-red-950/40 border-red-500 text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.2)] animate-pulse'
-                    : 'bg-cyan-950/40 border-cyan-500 text-cyan-300 hover:bg-cyan-900/30'
-                }`}
-              >
-                <Mic className="w-3 h-3 animate-pulse" />
-                <span>{isListeningVoice ? "DİNLENİYOR..." : "SESLİ VİTAL OKU"}</span>
-              </button>
             </div>
 
             {/* Vital Bulgular */}
@@ -3328,16 +3651,32 @@ export default function JifrafFuturisticApp() {
               {activePicker && (
                 <div className="fixed inset-0 z-30 bg-transparent" onClick={() => setActivePicker(null)} />
               )}
-              <span className="text-[10px] text-slate-400 font-mono font-bold uppercase tracking-wider block">{t("vitals_header")}</span>
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] text-slate-400 font-mono font-bold uppercase tracking-wider block">{t("vitals_header")}</span>
+                <span className="text-[9px] text-cyan-400 font-mono">İkonlara tıklayarak bireysel ses/klavye kullanın</span>
+              </div>
+
               <div className="grid grid-cols-5 gap-2">
+                {/* Nabız */}
                 <div className="relative">
-                  <label className="text-[8px] text-slate-400 uppercase font-mono block mb-1 text-center">Nabız (bpm)</label>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-[8px] text-slate-400 uppercase font-mono block text-center truncate">Nabız</label>
+                    <button
+                      type="button"
+                      onClick={() => toggleInputVoice('pulse', setIntakePulse, intakePulse, 'Nabız')}
+                      className={`p-0.5 rounded ${activeVoiceInputId === 'pulse' ? 'text-red-400 animate-pulse' : 'text-slate-500 hover:text-cyan-400'}`}
+                    >
+                      <Mic className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
                   <input 
                     type="text" 
                     value={intakePulse}
-                    onFocus={() => setActivePicker('pulse')}
+                    onFocus={() => { setActivePicker('pulse'); handleFieldFocusForKeyboard('Nabız (bpm)', setIntakePulse, intakePulse); }}
                     onChange={(e) => setIntakePulse(e.target.value)}
-                    className="w-full bg-[#020814] border border-cyan-900/55 rounded py-1 px-1.5 text-xs text-slate-300 focus:outline-none focus:border-cyan-500 font-mono text-center shadow-inner cursor-pointer"
+                    className={`w-full bg-[#020814] border rounded py-1 px-1 text-xs text-slate-300 focus:outline-none font-mono text-center shadow-inner cursor-pointer ${
+                      activeVoiceInputId === 'pulse' ? 'border-red-500 animate-pulse' : 'border-cyan-900/55 focus:border-cyan-500'
+                    }`}
                   />
                   {activePicker === 'pulse' && (
                     <div className="absolute top-full left-0 mt-1 w-44 bg-[#020814]/95 border border-cyan-500/30 rounded-lg p-2 z-40 shadow-xl backdrop-blur-md grid grid-cols-4 gap-1">
@@ -3354,14 +3693,27 @@ export default function JifrafFuturisticApp() {
                     </div>
                   )}
                 </div>
+
+                {/* Tansiyon */}
                 <div className="relative">
-                  <label className="text-[8px] text-slate-400 uppercase font-mono block mb-1 text-center">Tansiyon</label>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-[8px] text-slate-400 uppercase font-mono block text-center truncate">Tansiyon</label>
+                    <button
+                      type="button"
+                      onClick={() => toggleInputVoice('bp', setIntakeBP, intakeBP, 'Tansiyon')}
+                      className={`p-0.5 rounded ${activeVoiceInputId === 'bp' ? 'text-red-400 animate-pulse' : 'text-slate-500 hover:text-cyan-400'}`}
+                    >
+                      <Mic className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
                   <input 
                     type="text" 
                     value={intakeBP}
-                    onFocus={() => setActivePicker('bp')}
+                    onFocus={() => { setActivePicker('bp'); handleFieldFocusForKeyboard('Tansiyon (mmHg)', setIntakeBP, intakeBP); }}
                     onChange={(e) => setIntakeBP(e.target.value)}
-                    className="w-full bg-[#020814] border border-cyan-900/55 rounded py-1 px-1.5 text-xs text-slate-300 focus:outline-none focus:border-cyan-500 font-mono text-center shadow-inner cursor-pointer"
+                    className={`w-full bg-[#020814] border rounded py-1 px-1 text-xs text-slate-300 focus:outline-none font-mono text-center shadow-inner cursor-pointer ${
+                      activeVoiceInputId === 'bp' ? 'border-red-500 animate-pulse' : 'border-cyan-900/55 focus:border-cyan-500'
+                    }`}
                   />
                   {activePicker === 'bp' && (
                     <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-64 bg-[#020814]/95 border border-cyan-500/30 rounded-lg p-2 z-40 shadow-xl backdrop-blur-md font-sans text-slate-300">
@@ -3370,121 +3722,140 @@ export default function JifrafFuturisticApp() {
                         <span>KÜÇÜK (DIA)</span>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
-                        {/* Systolic Column */}
-                        <div className="space-y-1 overflow-y-auto pr-1 border-r border-cyan-950 max-h-40 scrollbar-thin">
-                          {[8, 8.5, 9, 9.5, 10, 10.5, 11, 11.5, 12, 12.5, 13, 13.5, 14, 14.5, 15, 15.5, 16, 16.5, 17, 17.5, 18, 19, 20].map(val => (
+                        <div className="space-y-1 max-h-32 overflow-y-auto pr-1 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-cyan-800">
+                          {[90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200].map(sys => (
                             <button
-                              key={val}
+                              key={sys}
                               type="button"
                               onClick={() => {
-                                const currentDia = intakeBP.split('/')[1] || '80';
-                                const sysVal = Math.round(val * 10);
-                                setIntakeBP(`${sysVal}/${currentDia}`);
+                                const currentDia = intakeBP.includes('/') ? intakeBP.split('/')[1] : '80';
+                                setIntakeBP(`${sys}/${currentDia}`);
                               }}
-                              className={`w-full py-0.5 text-[10px] font-mono rounded border text-center transition-colors cursor-pointer block ${
-                                Math.round((parseFloat(intakeBP.split('/')[0]) || 120) / 10) === val
-                                  ? 'bg-cyan-500 text-slate-950 border-cyan-400'
-                                  : 'bg-cyan-950/20 border-cyan-900/40 hover:bg-cyan-900/30 text-slate-300'
-                              }`}
+                              className="w-full py-0.5 bg-cyan-950/30 border border-cyan-900/40 hover:bg-cyan-500 hover:text-slate-950 rounded text-center transition-colors cursor-pointer text-[10px] font-mono"
                             >
-                              {val.toFixed(1)}
+                              {sys}
                             </button>
                           ))}
                         </div>
-                        {/* Diastolic Column */}
-                        <div className="space-y-1 overflow-y-auto pl-1 max-h-40 scrollbar-thin">
-                          {[4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10, 10.5, 11, 11.5, 12].map(val => (
+                        <div className="space-y-1 max-h-32 overflow-y-auto pr-1 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-cyan-800">
+                          {[50, 60, 70, 80, 90, 100, 110, 120].map(dia => (
                             <button
-                              key={val}
+                              key={dia}
                               type="button"
                               onClick={() => {
-                                const currentSys = intakeBP.split('/')[0] || '120';
-                                const diaVal = Math.round(val * 10);
-                                setIntakeBP(`${currentSys}/${diaVal}`);
+                                const currentSys = intakeBP.includes('/') ? intakeBP.split('/')[0] : '120';
+                                setIntakeBP(`${currentSys}/${dia}`);
+                                setActivePicker(null);
                               }}
-                              className={`w-full py-0.5 text-[10px] font-mono rounded border text-center transition-colors cursor-pointer block ${
-                                Math.round((parseFloat(intakeBP.split('/')[1]) || 80) / 10) === val
-                                  ? 'bg-cyan-500 text-slate-950 border-cyan-400'
-                                  : 'bg-cyan-950/20 border-cyan-900/40 hover:bg-cyan-900/30 text-slate-300'
-                              }`}
+                              className="w-full py-0.5 bg-cyan-950/30 border border-cyan-900/40 hover:bg-cyan-500 hover:text-slate-950 rounded text-center transition-colors cursor-pointer text-[10px] font-mono"
                             >
-                              {val.toFixed(1)}
+                              /{dia}
                             </button>
                           ))}
                         </div>
-                      </div>
-                      <div className="border-t border-cyan-950 mt-1.5 pt-1.5 text-center">
-                        <button
-                          type="button"
-                          onClick={() => setActivePicker(null)}
-                          className="px-3 py-0.5 bg-cyan-600 hover:bg-cyan-700 text-slate-950 font-bold text-[9px] rounded uppercase transition-colors cursor-pointer"
-                        >
-                          Tamam
-                        </button>
                       </div>
                     </div>
                   )}
                 </div>
+
+                {/* SpO2 */}
                 <div className="relative">
-                  <label className="text-[8px] text-slate-400 uppercase font-mono block mb-1 text-center">SpO2 (%)</label>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-[8px] text-slate-400 uppercase font-mono block text-center truncate">SpO2 (%)</label>
+                    <button
+                      type="button"
+                      onClick={() => toggleInputVoice('spo2', setIntakeSpO2, intakeSpO2, 'SpO2')}
+                      className={`p-0.5 rounded ${activeVoiceInputId === 'spo2' ? 'text-red-400 animate-pulse' : 'text-slate-500 hover:text-cyan-400'}`}
+                    >
+                      <Mic className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
                   <input 
                     type="text" 
                     value={intakeSpO2}
-                    onFocus={() => setActivePicker('spo2')}
+                    onFocus={() => { setActivePicker('spo2'); handleFieldFocusForKeyboard('SpO2 (%)', setIntakeSpO2, intakeSpO2); }}
                     onChange={(e) => setIntakeSpO2(e.target.value)}
-                    className="w-full bg-[#020814] border border-cyan-900/55 rounded py-1 px-1.5 text-xs text-slate-300 focus:outline-none focus:border-cyan-500 font-mono text-center shadow-inner cursor-pointer"
+                    className={`w-full bg-[#020814] border rounded py-1 px-1 text-xs text-slate-300 focus:outline-none font-mono text-center shadow-inner cursor-pointer ${
+                      activeVoiceInputId === 'spo2' ? 'border-red-500 animate-pulse' : 'border-cyan-900/55 focus:border-cyan-500'
+                    }`}
                   />
                   {activePicker === 'spo2' && (
-                    <div className="absolute top-full left-0 mt-1 w-44 bg-[#020814]/95 border border-cyan-500/30 rounded-lg p-2 z-40 shadow-xl backdrop-blur-md grid grid-cols-4 gap-1">
-                      {[80, 85, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100].map(val => (
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-36 bg-[#020814]/95 border border-cyan-500/30 rounded-lg p-2 z-40 shadow-xl backdrop-blur-md grid grid-cols-3 gap-1">
+                      {[100, 99, 98, 97, 96, 95, 94, 93, 92, 91, 90, 88, 85, 80].map(val => (
                         <button
                           key={val}
                           type="button"
                           onClick={() => { setIntakeSpO2(String(val)); setActivePicker(null); }}
                           className="py-1 bg-cyan-950/40 border border-cyan-900/55 hover:bg-cyan-500 hover:text-slate-950 rounded text-center transition-colors cursor-pointer text-slate-300 text-[10px] font-mono"
                         >
-                          {val}%
+                          %{val}
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
+
+                {/* Ateş */}
                 <div className="relative">
-                  <label className="text-[8px] text-slate-400 uppercase font-mono block mb-1 text-center">Ateş (°C)</label>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-[8px] text-slate-400 uppercase font-mono block text-center truncate">Ateş (°C)</label>
+                    <button
+                      type="button"
+                      onClick={() => toggleInputVoice('temp', setIntakeTemp, intakeTemp, 'Ateş')}
+                      className={`p-0.5 rounded ${activeVoiceInputId === 'temp' ? 'text-red-400 animate-pulse' : 'text-slate-500 hover:text-cyan-400'}`}
+                    >
+                      <Mic className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
                   <input 
                     type="text" 
                     value={intakeTemp}
-                    onFocus={() => setActivePicker('temp')}
+                    onFocus={() => { setActivePicker('temp'); handleFieldFocusForKeyboard('Ateş (°C)', setIntakeTemp, intakeTemp); }}
                     onChange={(e) => setIntakeTemp(e.target.value)}
-                    className="w-full bg-[#020814] border border-cyan-900/55 rounded py-1 px-1.5 text-xs text-slate-300 focus:outline-none focus:border-cyan-500 font-mono text-center shadow-inner cursor-pointer"
+                    className={`w-full bg-[#020814] border rounded py-1 px-1 text-xs text-slate-300 focus:outline-none font-mono text-center shadow-inner cursor-pointer ${
+                      activeVoiceInputId === 'temp' ? 'border-red-500 animate-pulse' : 'border-cyan-900/55 focus:border-cyan-500'
+                    }`}
                   />
                   {activePicker === 'temp' && (
-                    <div className="absolute top-full left-0 mt-1 w-44 bg-[#020814]/95 border border-cyan-500/30 rounded-lg p-2 z-40 shadow-xl backdrop-blur-md grid grid-cols-3 gap-1">
-                      {[35.0, 35.5, 36.0, 36.5, 37.0, 37.5, 38.0, 38.5, 39.0, 39.5, 40.0, 40.5, 41.0].map(val => (
+                    <div className="absolute top-full right-0 mt-1 w-36 bg-[#020814]/95 border border-cyan-500/30 rounded-lg p-2 z-40 shadow-xl backdrop-blur-md grid grid-cols-3 gap-1">
+                      {["36.0", "36.5", "37.0", "37.2", "37.5", "37.8", "38.0", "38.5", "39.0", "39.5", "40.0"].map(val => (
                         <button
                           key={val}
                           type="button"
-                          onClick={() => { setIntakeTemp(val.toFixed(1)); setActivePicker(null); }}
+                          onClick={() => { setIntakeTemp(val); setActivePicker(null); }}
                           className="py-1 bg-cyan-950/40 border border-cyan-900/55 hover:bg-cyan-500 hover:text-slate-950 rounded text-center transition-colors cursor-pointer text-slate-300 text-[10px] font-mono"
                         >
-                          {val.toFixed(1)}°
+                          {val}
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
+
+                {/* Solunum */}
                 <div className="relative">
-                  <label className="text-[8px] text-slate-400 uppercase font-mono block mb-1 text-center">Solunum (/dk)</label>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-[8px] text-slate-400 uppercase font-mono block text-center truncate">Solunum</label>
+                    <button
+                      type="button"
+                      onClick={() => toggleInputVoice('resp_rate', setIntakeResp, intakeResp, 'Solunum Hızı')}
+                      className={`p-0.5 rounded ${activeVoiceInputId === 'resp_rate' ? 'text-red-400 animate-pulse' : 'text-slate-500 hover:text-cyan-400'}`}
+                    >
+                      <Mic className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
                   <input 
                     type="text" 
                     value={intakeResp}
-                    onFocus={() => setActivePicker('resp')}
+                    onFocus={() => { setActivePicker('resp'); handleFieldFocusForKeyboard('Solunum Hızı', setIntakeResp, intakeResp); }}
                     onChange={(e) => setIntakeResp(e.target.value)}
-                    className="w-full bg-[#020814] border border-cyan-900/55 rounded py-1 px-1.5 text-xs text-slate-300 focus:outline-none focus:border-cyan-500 font-mono text-center shadow-inner cursor-pointer"
+                    className={`w-full bg-[#020814] border rounded py-1 px-1 text-xs text-slate-300 focus:outline-none font-mono text-center shadow-inner cursor-pointer ${
+                      activeVoiceInputId === 'resp_rate' ? 'border-red-500 animate-pulse' : 'border-cyan-900/55 focus:border-cyan-500'
+                    }`}
                   />
                   {activePicker === 'resp' && (
-                    <div className="absolute top-full left-0 mt-1 w-44 bg-[#020814]/95 border border-cyan-500/30 rounded-lg p-2 z-40 shadow-xl backdrop-blur-md grid grid-cols-4 gap-1">
-                      {[12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40].map(val => (
+                    <div className="absolute top-full right-0 mt-1 w-36 bg-[#020814]/95 border border-cyan-500/30 rounded-lg p-2 z-40 shadow-xl backdrop-blur-md grid grid-cols-3 gap-1">
+                      {[12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 36].map(val => (
                         <button
                           key={val}
                           type="button"
@@ -3497,9 +3868,9 @@ export default function JifrafFuturisticApp() {
                     </div>
                   )}
                 </div>
+
               </div>
             </div>
-            {renderHistoryTrendPanel()}
           </div>
 
           {/* RIGHT COLUMN: Fizik Muayene & Laboratuvar */}
@@ -3509,125 +3880,148 @@ export default function JifrafFuturisticApp() {
               Fizik Muayene & Laboratuvar
             </h3>
 
-            <div className="space-y-2.5">
-              <div>
-                <label className="text-[9px] text-slate-400 uppercase font-mono block mb-1">Fizik Muayene — Genel Durum</label>
-                <input 
-                  type="text" 
-                  value={intakePhysicalGen}
-                  onChange={(e) => setIntakePhysicalGen(e.target.value)}
-                  className="w-full bg-[#020814] border border-cyan-900/55 rounded-lg py-1 px-2.5 text-xs text-slate-300 focus:outline-none focus:border-cyan-500"
-                />
-              </div>
-              <div>
-                <label className="text-[9px] text-slate-400 uppercase font-mono block mb-1">Fizik Muayene — Solunum Sistemi</label>
-                <input 
-                  type="text" 
-                  value={intakePhysicalResp}
-                  onChange={(e) => setIntakePhysicalResp(e.target.value)}
-                  className="w-full bg-[#020814] border border-cyan-900/55 rounded-lg py-1 px-2.5 text-xs text-slate-300 focus:outline-none focus:border-cyan-500"
-                />
-              </div>
-              <div>
-                <label className="text-[9px] text-slate-400 uppercase font-mono block mb-1">Fizik Muayene — Kardiyovasküler Sistem</label>
-                <input 
-                  type="text" 
-                  value={intakePhysicalCVS}
-                  onChange={(e) => setIntakePhysicalCVS(e.target.value)}
-                  className="w-full bg-[#020814] border border-cyan-900/55 rounded-lg py-1 px-2.5 text-xs text-slate-300 focus:outline-none focus:border-cyan-500"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[9px] text-slate-400 uppercase font-mono block mb-1">Batın Muayenesi</label>
-                  <input 
-                    type="text" 
-                    value={intakePhysicalAbdomen}
-                    onChange={(e) => setIntakePhysicalAbdomen(e.target.value)}
-                    className="w-full bg-[#020814] border border-cyan-900/55 rounded-lg py-1 px-2.5 text-xs text-slate-300 focus:outline-none focus:border-cyan-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-[9px] text-slate-400 uppercase font-mono block mb-1">Nörolojik Kısa Not</label>
-                  <input 
-                    type="text" 
-                    value={intakePhysicalNeuro}
-                    onChange={(e) => setIntakePhysicalNeuro(e.target.value)}
-                    className="w-full bg-[#020814] border border-cyan-900/55 rounded-lg py-1 px-2.5 text-xs text-slate-300 focus:outline-none focus:border-cyan-500"
-                  />
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-[9px] text-slate-400 uppercase font-mono">Fizik Muayene - Genel Durum</label>
+                <div className="flex items-center gap-0.5">
+                  <button type="button" onClick={() => toggleInputZoom('phys_gen', 'Fizik Muayene - Genel Durum', intakePhysicalGen, setIntakePhysicalGen)} className="p-0.5 rounded text-slate-500 hover:text-cyan-300"><Maximize2 className="w-2.5 h-2.5" /></button>
+                  <button
+                    type="button"
+                    onClick={() => toggleInputVoice('phys_gen', setIntakePhysicalGen, intakePhysicalGen, 'Genel Durum')}
+                    className={`p-0.5 rounded border ${activeVoiceInputId === 'phys_gen' ? 'bg-red-950 border-red-500 text-red-400 animate-pulse' : 'text-slate-500 border-slate-800 hover:text-cyan-400'}`}
+                  >
+                    <Mic className="w-3 h-3" />
+                  </button>
                 </div>
               </div>
+              <input 
+                type="text" 
+                value={intakePhysicalGen}
+                onFocus={() => handleFieldFocusForKeyboard('Genel Durum', setIntakePhysicalGen, intakePhysicalGen)}
+                onClick={() => toggleInputZoom('phys_gen', 'Fizik Muayene - Genel Durum', intakePhysicalGen, setIntakePhysicalGen)}
+                onChange={(e) => setIntakePhysicalGen(e.target.value)}
+                className={`w-full bg-[#020814] border rounded-lg py-1.5 px-2.5 text-xs text-slate-300 focus:outline-none transition-colors ${
+                  activeVoiceInputId === 'phys_gen' ? 'border-red-500' : 'border-cyan-900/55 focus:border-cyan-500'
+                }`}
+              />
             </div>
 
-            {/* Laboratuvar Girişleri */}
-            <div className="border-t border-slate-900/50 pt-3 space-y-2">
-              <span className="text-[10px] text-slate-400 font-mono font-bold uppercase tracking-wider block">LABORATUVAR BULGULARI</span>
-              <div className="grid grid-cols-4 gap-2">
-                <div>
-                  <label className="text-[8px] text-slate-400 uppercase font-mono block mb-1 text-center">MCV (fL)</label>
-                  <input 
-                    type="text" 
-                    value={intakeMCV}
-                    onChange={(e) => setIntakeMCV(e.target.value)}
-                    className="w-full bg-[#020814] border border-cyan-900/55 rounded py-1 px-1 text-xs text-slate-300 focus:outline-none focus:border-cyan-500 font-mono text-center shadow-inner"
-                  />
-                </div>
-                <div>
-                  <label className="text-[8px] text-slate-400 uppercase font-mono block mb-1 text-center">Ferritin</label>
-                  <input 
-                    type="text" 
-                    value={intakeFerritin}
-                    onChange={(e) => setIntakeFerritin(e.target.value)}
-                    className="w-full bg-[#020814] border border-cyan-900/55 rounded py-1 px-1 text-xs text-slate-300 focus:outline-none focus:border-cyan-500 font-mono text-center shadow-inner"
-                  />
-                </div>
-                <div>
-                  <label className="text-[8px] text-slate-400 uppercase font-mono block mb-1 text-center">Demir</label>
-                  <input 
-                    type="text" 
-                    value={intakeIron}
-                    onChange={(e) => setIntakeIron(e.target.value)}
-                    className="w-full bg-[#020814] border border-cyan-900/55 rounded py-1 px-1 text-xs text-slate-300 focus:outline-none focus:border-cyan-500 font-mono text-center shadow-inner"
-                  />
-                </div>
-                <div>
-                  <label className="text-[8px] text-slate-400 uppercase font-mono block mb-1 text-center">CRP</label>
-                  <input 
-                    type="text" 
-                    value={intakeCRP}
-                    onChange={(e) => setIntakeCRP(e.target.value)}
-                    className="w-full bg-[#020814] border border-cyan-900/55 rounded py-1 px-1 text-xs text-slate-300 focus:outline-none focus:border-cyan-500 font-mono text-center shadow-inner"
-                  />
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-[9px] text-slate-400 uppercase font-mono">Fizik Muayene - Solunum Sistemi</label>
+                <div className="flex items-center gap-0.5">
+                  <button type="button" onClick={() => toggleInputZoom('phys_resp', 'Fizik Muayene - Solunum Sistemi', intakePhysicalResp, setIntakePhysicalResp)} className="p-0.5 rounded text-slate-500 hover:text-cyan-300"><Maximize2 className="w-2.5 h-2.5" /></button>
+                  <button
+                    type="button"
+                    onClick={() => toggleInputVoice('phys_resp', setIntakePhysicalResp, intakePhysicalResp, 'Solunum Sistemi')}
+                    className={`p-0.5 rounded border ${activeVoiceInputId === 'phys_resp' ? 'bg-red-950 border-red-500 text-red-400 animate-pulse' : 'text-slate-500 border-slate-800 hover:text-cyan-400'}`}
+                  >
+                    <Mic className="w-3 h-3" />
+                  </button>
                 </div>
               </div>
-              <div>
-                <label className="text-[8px] text-slate-400 uppercase font-mono block mb-1">Serbest Laboratuvar Notu</label>
-                <textarea 
-                  rows={2}
-                  value={intakeLabNotes}
-                  onChange={(e) => setIntakeLabNotes(e.target.value)}
-                  placeholder="Diğer laboratuvar ve tetkik bulgularını buraya not alın..."
-                  className="w-full bg-[#020814] border border-cyan-900/55 rounded py-1.5 px-2 text-xs text-slate-300 focus:outline-none focus:border-cyan-500 resize-none font-sans"
-                />
-              </div>
+              <input 
+                type="text" 
+                value={intakePhysicalResp}
+                onFocus={() => handleFieldFocusForKeyboard('Solunum Sistemi', setIntakePhysicalResp, intakePhysicalResp)}
+                onClick={() => toggleInputZoom('phys_resp', 'Fizik Muayene - Solunum Sistemi', intakePhysicalResp, setIntakePhysicalResp)}
+                onChange={(e) => setIntakePhysicalResp(e.target.value)}
+                className={`w-full bg-[#020814] border rounded-lg py-1.5 px-2.5 text-xs text-slate-300 focus:outline-none transition-colors ${
+                  activeVoiceInputId === 'phys_resp' ? 'border-red-500' : 'border-cyan-900/55 focus:border-cyan-500'
+                }`}
+              />
             </div>
 
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-[9px] text-slate-400 uppercase font-mono">Fizik Muayene - Kardiyovasküler Sistem</label>
+                <div className="flex items-center gap-0.5">
+                  <button type="button" onClick={() => toggleInputZoom('phys_cvs', 'Fizik Muayene - Kardiyovasküler Sistem', intakePhysicalCVS, setIntakePhysicalCVS)} className="p-0.5 rounded text-slate-500 hover:text-cyan-300"><Maximize2 className="w-2.5 h-2.5" /></button>
+                  <button
+                    type="button"
+                    onClick={() => toggleInputVoice('phys_cvs', setIntakePhysicalCVS, intakePhysicalCVS, 'Kardiyovasküler')}
+                    className={`p-0.5 rounded border ${activeVoiceInputId === 'phys_cvs' ? 'bg-red-950 border-red-500 text-red-400 animate-pulse' : 'text-slate-500 border-slate-800 hover:text-cyan-400'}`}
+                  >
+                    <Mic className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+              <input 
+                type="text" 
+                value={intakePhysicalCVS}
+                onFocus={() => handleFieldFocusForKeyboard('Kardiyovasküler Sistem', setIntakePhysicalCVS, intakePhysicalCVS)}
+                onClick={() => toggleInputZoom('phys_cvs', 'Fizik Muayene - Kardiyovasküler Sistem', intakePhysicalCVS, setIntakePhysicalCVS)}
+                onChange={(e) => setIntakePhysicalCVS(e.target.value)}
+                className={`w-full bg-[#020814] border rounded-lg py-1.5 px-2.5 text-xs text-slate-300 focus:outline-none transition-colors ${
+                  activeVoiceInputId === 'phys_cvs' ? 'border-red-500' : 'border-cyan-900/55 focus:border-cyan-500'
+                }`}
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-[9px] text-slate-400 uppercase font-mono">Fizik Muayene - Abdomen & Nöroloji</label>
+                <div className="flex items-center gap-0.5">
+                  <button type="button" onClick={() => toggleInputZoom('phys_abd', 'Fizik Muayene - Abdomen & Nöroloji', intakePhysicalAbdomen, setIntakePhysicalAbdomen)} className="p-0.5 rounded text-slate-500 hover:text-cyan-300"><Maximize2 className="w-2.5 h-2.5" /></button>
+                  <button
+                    type="button"
+                    onClick={() => toggleInputVoice('phys_abd', setIntakePhysicalAbdomen, intakePhysicalAbdomen, 'Abdomen & Nöroloji')}
+                    className={`p-0.5 rounded border ${activeVoiceInputId === 'phys_abd' ? 'bg-red-950 border-red-500 text-red-400 animate-pulse' : 'text-slate-500 border-slate-800 hover:text-cyan-400'}`}
+                  >
+                    <Mic className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+              <input 
+                type="text" 
+                value={intakePhysicalAbdomen}
+                onFocus={() => handleFieldFocusForKeyboard('Abdomen & Nöroloji', setIntakePhysicalAbdomen, intakePhysicalAbdomen)}
+                onClick={() => toggleInputZoom('phys_abd', 'Fizik Muayene - Abdomen & Nöroloji', intakePhysicalAbdomen, setIntakePhysicalAbdomen)}
+                onChange={(e) => setIntakePhysicalAbdomen(e.target.value)}
+                className={`w-full bg-[#020814] border rounded-lg py-1.5 px-2.5 text-xs text-slate-300 focus:outline-none transition-colors ${
+                  activeVoiceInputId === 'phys_abd' ? 'border-red-500' : 'border-cyan-900/55 focus:border-cyan-500'
+                }`}
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-[9px] text-slate-400 uppercase font-mono">Laboratuvar / Ek Notlar</label>
+                <div className="flex items-center gap-0.5">
+                  <button type="button" onClick={() => toggleInputZoom('lab_notes', 'Laboratuvar / Ek Notlar', intakeLabNotes, setIntakeLabNotes)} className="p-0.5 rounded text-slate-500 hover:text-cyan-300"><Maximize2 className="w-2.5 h-2.5" /></button>
+                  <button
+                    type="button"
+                    onClick={() => toggleInputVoice('lab_notes', setIntakeLabNotes, intakeLabNotes, 'Lab Notları')}
+                    className={`p-0.5 rounded border ${activeVoiceInputId === 'lab_notes' ? 'bg-red-950 border-red-500 text-red-400 animate-pulse' : 'text-slate-500 border-slate-800 hover:text-cyan-400'}`}
+                  >
+                    <Mic className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+              <input 
+                type="text" 
+                value={intakeLabNotes}
+                onFocus={() => handleFieldFocusForKeyboard('Lab / Ek Notlar', setIntakeLabNotes, intakeLabNotes)}
+                onClick={() => toggleInputZoom('lab_notes', 'Laboratuvar / Ek Notlar', intakeLabNotes, setIntakeLabNotes)}
+                onChange={(e) => setIntakeLabNotes(e.target.value)}
+                className={`w-full bg-[#020814] border rounded-lg py-1.5 px-2.5 text-xs text-slate-300 focus:outline-none transition-colors ${
+                  activeVoiceInputId === 'lab_notes' ? 'border-red-500' : 'border-cyan-900/55 focus:border-cyan-500'
+                }`}
+              />
+            </div>
           </div>
-
         </div>
 
-        {/* ACTION TRIGGER BUTTON */}
-        <div className="mt-4 shrink-0">
-          <button 
+        {/* BOTTOM ACTION BAR */}
+        <div className="mt-4 pt-3 border-t border-cyan-900/30 flex justify-end gap-3 shrink-0">
+          <button
             type="button"
             onClick={handleRegisterVisit}
-            disabled={loading || !emrCaseId}
-            className="w-full py-3.5 rounded-xl border border-cyan-500 bg-cyan-950/40 text-cyan-300 font-extrabold text-xs tracking-widest shadow-[0_0_15px_rgba(6,182,212,0.2)] hover:bg-cyan-800/40 hover:shadow-[0_0_25px_rgba(6,182,212,0.45)] transition-all disabled:opacity-40 disabled:cursor-not-allowed select-none uppercase font-mono cursor-pointer"
+            className="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded-lg text-xs font-mono uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(6,182,212,0.3)] hover:shadow-[0_0_20px_rgba(6,182,212,0.5)] cursor-pointer"
           >
-            {loading ? "KAYDEDİLİYOR..." : "Vizit ve Bulguları Kaydet (EMR Visit)"}
+            💾 Klinik Vizit & Anamnezi Kaydet
           </button>
         </div>
-
       </div>
     );
   };
@@ -3948,23 +4342,33 @@ export default function JifrafFuturisticApp() {
             <button
               type="button"
               onClick={() => {
-                setShowEkgToolbar((prev) => !prev);
-                setShowPenConfig(false);
+                if (!showEkgToolbar) {
+                  setShowEkgToolbar(true);
+                  setEkgTool('circle');
+                } else {
+                  setShowEkgToolbar(false);
+                  setEkgTool(null);
+                }
               }}
-              className="absolute right-5 bottom-5 z-30 inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-slate-950/90 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-emerald-200 shadow-lg hover:bg-emerald-950/50"
+              className="absolute right-5 bottom-5 z-30 inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-slate-950/90 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-emerald-200 shadow-lg hover:bg-emerald-950/50 cursor-pointer select-none"
               title="Isaretleme bandini ac/kapat"
             >
               <Crosshair className="w-3.5 h-3.5" />
-              Isaretle
+              {showEkgToolbar ? "Kapat" : "Isaretle"}
             </button>
 
             {/* Interactive SVG Drawing Overlay */}
             <svg 
-              className="absolute inset-0 w-full h-full select-none"
+              viewBox="0 0 1000 1000"
+              preserveAspectRatio="none"
+              className="absolute inset-0 w-full h-full select-none touch-none"
               style={{ cursor: ekgTool ? 'crosshair' : 'default', zIndex: 10 }}
               onMouseDown={handleEKGMouseDown}
               onMouseMove={handleEKGMouseMove}
               onMouseUp={handleEKGMouseUp}
+              onTouchStart={handleEKGMouseDown}
+              onTouchMove={handleEKGMouseMove}
+              onTouchEnd={handleEKGMouseUp}
               onContextMenu={(e) => e.preventDefault()}
             >
               {/* Render completed annotations */}
@@ -3983,7 +4387,6 @@ export default function JifrafFuturisticApp() {
                     />
                   );
                 } else if (ann.type === 'circle') {
-                  const diameterMm = (ann.r * 2 * 0.2).toFixed(1);
                   return (
                     <g key={idx}>
                       <circle 
@@ -3991,25 +4394,13 @@ export default function JifrafFuturisticApp() {
                         cy={ann.cy} 
                         r={ann.r} 
                         fill="none" 
-                        stroke={ann.color} 
-                        strokeWidth={ann.width} 
-                        strokeDasharray="4 3"
-                        className="cursor-pointer hover:stroke-cyan-400"
-                        style={{ cursor: 'pointer' }}
+                        stroke={ann.color || '#10b981'} 
+                        strokeWidth={ann.width || 3} 
+                        className="cursor-move hover:stroke-cyan-400"
+                        style={{ cursor: 'move' }}
                       >
-                        <title>Sağ Tıklayıp Sürükleyerek Taşıyın (Right Click to Drag)</title>
+                        <title>Tıklayıp Sürükleyerek Taşıyın</title>
                       </circle>
-                      <circle cx={ann.cx} cy={ann.cy} r={3} fill={ann.color} />
-                      <line x1={ann.cx} y1={ann.cy} x2={ann.cx + ann.r} y2={ann.cy} stroke={ann.color} strokeWidth={1} strokeDasharray="2 2" />
-                      <text 
-                        x={ann.cx + ann.r + 5} 
-                        y={ann.cy + 4} 
-                        fill={ann.color} 
-                        className="text-[9px] font-mono font-bold bg-[#020814]/85 px-1 rounded border border-slate-800 pointer-events-none select-none"
-                        style={{ textShadow: '1px 1px 1px #000' }}
-                      >
-                        Ø {diameterMm} mm
-                      </text>
                     </g>
                   );
                 } else if (ann.type === 'ruler') {
@@ -4283,6 +4674,48 @@ export default function JifrafFuturisticApp() {
             </>
           )}
 
+          {/* CTR Mode Clinician Guidance Banner */}
+          {radCTRMode && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 bg-slate-950/95 border border-rose-500/60 rounded-xl px-4 py-2.5 shadow-[0_0_20px_rgba(244,63,94,0.3)] flex items-center gap-3 text-xs font-sans text-rose-200 animate-fade-in backdrop-blur-md">
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></div>
+                <span className="font-extrabold font-mono uppercase tracking-wider text-rose-400 text-[11px]">CTR Ölçümü</span>
+              </div>
+              
+              <div className="h-4 w-px bg-rose-900/60" />
+              
+              <div className="flex items-center gap-2 font-mono text-[11px]">
+                <span className="bg-rose-950 px-2 py-0.5 rounded border border-rose-800 text-rose-300 font-bold">
+                  Nokta {radCTRPoints.length + 1} / 4
+                </span>
+                <span className="text-slate-200 font-sans font-medium">
+                  {radCTRPoints.length === 0 && "1. Tık: Sol Kalp Dış Sınırı (Kardiyak apeks / en dış sol kenar)"}
+                  {radCTRPoints.length === 1 && "2. Tık: Sağ Kalp Dış Sınırı (En dış sağ kardiyak kenar)"}
+                  {radCTRPoints.length === 2 && "3. Tık: Sol Toraks İç Kot Sınırı (Diyafram üzeri iç toraks duvarı)"}
+                  {radCTRPoints.length === 3 && "4. Tık: Sağ Toraks İç Kot Sınırı (Diyafram üzeri iç toraks duvarı)"}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5 ml-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCTRHelpModal(true)}
+                  className="px-2 py-1 rounded bg-rose-900/40 hover:bg-rose-800/60 border border-rose-700/50 text-rose-200 text-[10px] font-mono font-bold transition-all cursor-pointer flex items-center gap-1"
+                  title="Ölçüm Rehberini Aç"
+                >
+                  <span>❓ Rehber</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setRadCTRMode(false); setRadCTRPoints([]); }}
+                  className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-400 hover:text-white text-[10px] font-mono transition-all cursor-pointer"
+                >
+                  İptal
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* AI Scan Overlay */}
           {radAiConsulting && (
             <div className="absolute inset-0 bg-[#020617]/85 backdrop-blur-xs z-30 flex flex-col items-center justify-center font-mono">
@@ -4296,7 +4729,7 @@ export default function JifrafFuturisticApp() {
 
           {/* AI Summary Speech Balloon */}
           {radAiSummaryBalloon && !radFocusedAdvisory && (
-            <div className="absolute top-16 right-4 bg-[#0a0f1d]/95 border border-cyan-500/40 rounded-xl p-3.5 shadow-2xl z-40 max-w-[280px] animate-fade-in font-sans">
+            <div className="absolute top-16 right-4 bg-[#0a0f1d]/95 border border-cyan-500/40 rounded-xl p-3 shadow-2xl z-40 max-w-[240px] max-h-[50vh] overflow-y-auto animate-fade-in font-sans">
               <div className="flex items-center justify-between mb-2.5">
                 <div className="flex items-center gap-1.5 text-cyan-400 font-bold text-xs uppercase tracking-wide">
                   <BrainCircuit className="w-4 h-4 animate-pulse" />
@@ -4335,103 +4768,6 @@ export default function JifrafFuturisticApp() {
           )}
 
           <div className="flex-1 flex flex-col justify-center items-center p-4 relative z-0 pb-16 min-h-[350px]">
-            {/* DICOM Adjustments Strip */}
-            {hasRadPreview && isImagePreviewFile(activeRadFile) && (
-              <div className="absolute top-16 left-4 z-20 flex flex-col gap-2 rounded-lg border border-cyan-500/30 bg-slate-950/90 px-3 py-2 text-[10px] font-mono text-cyan-300 shadow-lg w-52">
-                <div className="font-bold uppercase tracking-wide border-b border-cyan-900 pb-1 mb-1.5 flex justify-between items-center">
-                  <span>DICOM W/L & Canvas</span>
-                  <button 
-                    onClick={() => { setDicomWW(100); setDicomWL(100); setRulerPoints([]); }}
-                    className="text-[8px] bg-cyan-950 border border-cyan-800 px-1 rounded hover:bg-cyan-900 text-cyan-400"
-                  >
-                    Reset
-                  </button>
-                </div>
-                <div className="space-y-1.5 font-sans">
-                  <div className="flex justify-between items-center gap-1">
-                    <span>Contrast: {dicomWW}%</span>
-                    <input 
-                      type="range" min="50" max="200" value={dicomWW} 
-                      onChange={(e) => setDicomWW(parseInt(e.target.value))}
-                      className="w-20 accent-cyan-500"
-                    />
-                  </div>
-                  <div className="flex justify-between items-center gap-1">
-                    <span>Brightness: {dicomWL}%</span>
-                    <input 
-                      type="range" min="50" max="200" value={dicomWL} 
-                      onChange={(e) => setDicomWL(parseInt(e.target.value))}
-                      className="w-20 accent-cyan-500"
-                    />
-                  </div>
-                  <div className="border-t border-cyan-900/50 pt-1.5 flex justify-between items-center">
-                    <span>Ruler Line: {isRulerActive ? "ON" : "OFF"}</span>
-                    <button
-                      type="button"
-                      onClick={() => setIsRulerActive(!isRulerActive)}
-                      className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${isRulerActive ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 border border-cyan-855 text-cyan-300'}`}
-                    >
-                      {isRulerActive ? "KAPAT" : "AÇ"}
-                    </button>
-                  </div>
-                  <div className="border-t border-cyan-900/50 pt-1.5 flex flex-col gap-1.5 font-sans">
-                    <div className="flex justify-between items-center">
-                      <span>Scale Calibrate: {isCalibratingRad ? "ACTIVE" : "OFF"}</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsCalibratingRad(!isCalibratingRad);
-                          if (!isCalibratingRad) {
-                            alert("Lütfen radyoloji görüntüsü üzerinde uzunluğunu bildiğiniz referans çizgiyi cetvel çizer gibi tıklayıp sürükleyerek çizin.");
-                          }
-                        }}
-                        className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${isCalibratingRad ? 'bg-amber-500 text-slate-950 shadow-[0_0_8px_rgba(245,158,11,0.4)] animate-pulse' : 'bg-slate-800 border border-cyan-855 text-cyan-300'}`}
-                      >
-                        {isCalibratingRad ? "İPTAL" : "BAŞLAT"}
-                      </button>
-                    </div>
-                    {isCalibratingRad && (
-                      <div className="flex gap-1 items-center">
-                        <span className="text-[8px] text-slate-400">Ref (mm):</span>
-                        <input
-                          type="number"
-                          value={calibRefLength}
-                          onChange={(e) => setCalibRefLength(e.target.value)}
-                          className="w-12 bg-slate-900 border border-cyan-955 rounded px-1 text-[9px] text-slate-200"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (rulerPoints.length === 2) {
-                              const lenPx = Math.sqrt(Math.pow(rulerPoints[1].x - rulerPoints[0].x, 2) + Math.pow(rulerPoints[1].y - rulerPoints[0].y, 2));
-                              const refVal = parseFloat(calibRefLength) || 10;
-                              if (lenPx > 0) {
-                                const newFactor = refVal / lenPx;
-                                setRadCalibrationFactor(newFactor);
-                                setIsCalibratingRad(false);
-                                alert(`Kalibrasyon Başarılı! Oran ayarlandı: ${newFactor.toFixed(4)} mm/px`);
-                              }
-                            } else {
-                              alert("Kalibre etmek için lütfen önce görüntü üzerinde bir çizgi çizin.");
-                            }
-                          }}
-                          className="px-1.5 py-0.5 bg-emerald-600 text-slate-950 rounded text-[8px] font-bold hover:bg-emerald-500"
-                        >
-                          KAYDET
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  {rulerPoints.length === 2 && (
-                    <div className="text-[9px] text-amber-400 border-t border-cyan-900/50 pt-1 font-sans">
-                      Distance: {(Math.sqrt(Math.pow(rulerPoints[1].x - rulerPoints[0].x, 2) + Math.pow(rulerPoints[1].y - rulerPoints[0].y, 2)) * radCalibrationFactor).toFixed(1)} mm
-                      <div className="text-[8px] text-slate-500 mt-0.5">Pixel: {Math.sqrt(Math.pow(rulerPoints[1].x - rulerPoints[0].x, 2) + Math.pow(rulerPoints[1].y - rulerPoints[0].y, 2)).toFixed(0)} px</div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
             {hasRadPreview && (
               <div className="absolute inset-0 z-0 p-4 pb-16">
                 <div className="w-full h-full rounded-xl overflow-hidden border border-cyan-500/20 bg-slate-950/70 flex items-center justify-center">
@@ -4465,14 +4801,19 @@ export default function JifrafFuturisticApp() {
             <button
               type="button"
               onClick={() => {
-                setShowRadToolbar((prev) => !prev);
-                setRadShowPenConfig(false);
+                if (!showRadToolbar) {
+                  setShowRadToolbar(true);
+                  setRadTool('circle');
+                  setRadCTRMode(false);
+                } else {
+                  toggleRadToolbar();
+                }
               }}
-              className="absolute right-5 bottom-5 z-30 inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/40 bg-slate-950/90 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-cyan-200 shadow-lg hover:bg-cyan-950/50"
+              className="absolute right-5 bottom-5 z-30 inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/40 bg-slate-950/90 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-cyan-200 shadow-lg hover:bg-cyan-950/50 cursor-pointer select-none"
               title="Isaretleme bandini ac/kapat"
             >
               <Crosshair className="w-3.5 h-3.5" />
-              Isaretle
+              {showRadToolbar ? "Kapat" : "Isaretle"}
             </button>
 
             {!hasRadPreview && (
@@ -4495,13 +4836,13 @@ export default function JifrafFuturisticApp() {
 
             {/* Interactive SVG Drawing Overlay */}
             <svg 
-              className="absolute inset-0 w-full h-full select-none"
+              viewBox="0 0 1000 1000"
+              preserveAspectRatio="none"
+              className="absolute inset-0 w-full h-full select-none touch-none"
               style={{ cursor: isRulerActive ? 'crosshair' : (radTool ? 'crosshair' : 'default'), zIndex: 10 }}
               onMouseDown={(e) => {
                 if (isRulerActive) {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const x = e.clientX - rect.left;
-                  const y = e.clientY - rect.top;
+                  const { x, y } = getRadSvgCoords(e);
                   setRulerPoints([{ x, y }]);
                 } else {
                   handleRadMouseDown(e);
@@ -4509,15 +4850,36 @@ export default function JifrafFuturisticApp() {
               }}
               onMouseMove={(e) => {
                 if (isRulerActive && rulerPoints.length === 1) {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const x = e.clientX - rect.left;
-                  const y = e.clientY - rect.top;
+                  const { x, y } = getRadSvgCoords(e);
                   setRulerPoints([rulerPoints[0], { x, y }]);
                 } else {
                   handleRadMouseMove(e);
                 }
               }}
               onMouseUp={(e) => {
+                if (isRulerActive && rulerPoints.length === 2) {
+                  // completed
+                } else {
+                  handleRadMouseUp(e);
+                }
+              }}
+              onTouchStart={(e) => {
+                if (isRulerActive) {
+                  const { x, y } = getRadSvgCoords(e);
+                  setRulerPoints([{ x, y }]);
+                } else {
+                  handleRadMouseDown(e);
+                }
+              }}
+              onTouchMove={(e) => {
+                if (isRulerActive && rulerPoints.length === 1) {
+                  const { x, y } = getRadSvgCoords(e);
+                  setRulerPoints([rulerPoints[0], { x, y }]);
+                } else {
+                  handleRadMouseMove(e);
+                }
+              }}
+              onTouchEnd={(e) => {
                 if (isRulerActive && rulerPoints.length === 2) {
                   // completed
                 } else {
@@ -4560,7 +4922,6 @@ export default function JifrafFuturisticApp() {
                     />
                   );
                 } else if (ann.type === 'circle') {
-                  const diameterMm = (ann.r * 2 * radCalibrationFactor).toFixed(1);
                   return (
                     <g key={idx}>
                       <circle 
@@ -4568,25 +4929,13 @@ export default function JifrafFuturisticApp() {
                         cy={ann.cy} 
                         r={ann.r} 
                         fill="none" 
-                        stroke={ann.color} 
-                        strokeWidth={ann.width} 
-                        strokeDasharray="4 3"
-                        className="cursor-pointer hover:stroke-cyan-400"
-                        style={{ cursor: 'pointer' }}
+                        stroke={ann.color || '#ef4444'} 
+                        strokeWidth={ann.width || 3} 
+                        className="cursor-move hover:stroke-cyan-400"
+                        style={{ cursor: 'move' }}
                       >
-                        <title>Sağ Tıklayıp Sürükleyerek Taşıyın</title>
+                        <title>Tıklayıp Sürükleyerek Taşıyın</title>
                       </circle>
-                      <circle cx={ann.cx} cy={ann.cy} r={3} fill={ann.color} />
-                      <line x1={ann.cx} y1={ann.cy} x2={ann.cx + ann.r} y2={ann.cy} stroke={ann.color} strokeWidth={1} strokeDasharray="2 2" />
-                      <text 
-                        x={ann.cx + ann.r + 5} 
-                        y={ann.cy + 4} 
-                        fill={ann.color} 
-                        className="text-[9px] font-mono font-bold bg-[#020814]/85 px-1 rounded border border-slate-800 pointer-events-none select-none"
-                        style={{ textShadow: '1px 1px 1px #000' }}
-                      >
-                        Ø {diameterMm} mm
-                      </text>
                     </g>
                   );
                 } else if (ann.type === 'ruler') {
@@ -4636,6 +4985,46 @@ export default function JifrafFuturisticApp() {
                 return null;
               })}
 
+              {/* CTR Measurement Overlay */}
+              {radCTRPoints.length > 0 && (
+                <g>
+                  {radCTRPoints.map((pt, idx) => (
+                    <g key={`ctr-pt-${idx}`}>
+                      <circle cx={pt.x} cy={pt.y} r={5} fill={idx < 2 ? '#ef4444' : '#22d3ee'} stroke="#fff" strokeWidth={1} />
+                      <text x={pt.x + 8} y={pt.y + 4} fill={idx < 2 ? '#ef4444' : '#22d3ee'} className="text-[8px] font-mono font-bold" style={{ textShadow: '1px 1px 1px #000' }}>
+                        {idx === 0 ? 'H-Sol' : idx === 1 ? 'H-Sağ' : idx === 2 ? 'T-Sol' : 'T-Sağ'}
+                      </text>
+                    </g>
+                  ))}
+                </g>
+              )}
+              {radCTRResult && (
+                <g>
+                  {/* Heart line */}
+                  <line x1={radCTRResult.heartLeft.x} y1={radCTRResult.heartLeft.y} x2={radCTRResult.heartRight.x} y2={radCTRResult.heartRight.y} stroke="#ef4444" strokeWidth={2} strokeDasharray="5 3" />
+                  {/* Thorax line */}
+                  <line x1={radCTRResult.thoraxLeft.x} y1={radCTRResult.thoraxLeft.y} x2={radCTRResult.thoraxRight.x} y2={radCTRResult.thoraxRight.y} stroke="#22d3ee" strokeWidth={2} strokeDasharray="5 3" />
+                  {/* CTR result label */}
+                  <g className="cursor-pointer" onClick={() => { setRadCTRResult(null); setRadCTRPoints([]); }}>
+                    <rect x={(radCTRResult.heartLeft.x + radCTRResult.heartRight.x) / 2 - 75} y={Math.min(radCTRResult.heartLeft.y, radCTRResult.thoraxLeft.y) - 45} width={150} height={40} rx={8} fill="#020814" fillOpacity={0.95} stroke={parseFloat(radCTRResult.ratio) <= 0.50 ? '#22c55e' : '#ef4444'} strokeWidth={1.5} />
+                    <text x={(radCTRResult.heartLeft.x + radCTRResult.heartRight.x) / 2 - 5} y={Math.min(radCTRResult.heartLeft.y, radCTRResult.thoraxLeft.y) - 28} fill={parseFloat(radCTRResult.ratio) <= 0.50 ? '#22c55e' : '#ef4444'} textAnchor="middle" className="text-[11px] font-mono font-extrabold" style={{ textShadow: '1px 1px 1px #000' }}>
+                      CTR = {radCTRResult.ratio}
+                    </text>
+                    <text x={(radCTRResult.heartLeft.x + radCTRResult.heartRight.x) / 2 - 5} y={Math.min(radCTRResult.heartLeft.y, radCTRResult.thoraxLeft.y) - 14} fill="#94a3b8" textAnchor="middle" className="text-[8px] font-mono" style={{ textShadow: '1px 1px 1px #000' }}>
+                      {parseFloat(radCTRResult.ratio) <= 0.50 ? '✓ Normal (≤0.50)' : '⚠ Kardiyomegali Şüphesi (>0.50)'}
+                    </text>
+                    <text x={(radCTRResult.heartLeft.x + radCTRResult.heartRight.x) / 2 + 62} y={Math.min(radCTRResult.heartLeft.y, radCTRResult.thoraxLeft.y) - 22} fill="#ef4444" textAnchor="middle" className="text-[10px] font-bold">✕</text>
+                  </g>
+                  {/* Point labels */}
+                  {[radCTRResult.heartLeft, radCTRResult.heartRight].map((pt, i) => (
+                    <circle key={`ctr-h-${i}`} cx={pt.x} cy={pt.y} r={5} fill="#ef4444" stroke="#fff" strokeWidth={1} />
+                  ))}
+                  {[radCTRResult.thoraxLeft, radCTRResult.thoraxRight].map((pt, i) => (
+                    <circle key={`ctr-t-${i}`} cx={pt.x} cy={pt.y} r={5} fill="#22d3ee" stroke="#fff" strokeWidth={1} />
+                  ))}
+                </g>
+              )}
+
               {/* Active drawing stroke */}
               {activeRadAnnotation && (
                 <>
@@ -4650,28 +5039,14 @@ export default function JifrafFuturisticApp() {
                     />
                   )}
                   {activeRadAnnotation.type === 'circle' && (
-                    <g>
-                      <circle 
-                        cx={activeRadAnnotation.cx} 
-                        cy={activeRadAnnotation.cy} 
-                        r={activeRadAnnotation.r} 
-                        fill="none" 
-                        stroke={radPenColor} 
-                        strokeWidth={radPenWidth} 
-                        strokeDasharray="4 3"
-                      />
-                      <circle cx={activeRadAnnotation.cx} cy={activeRadAnnotation.cy} r={3} fill={radPenColor} />
-                      <line x1={activeRadAnnotation.cx} y1={activeRadAnnotation.cy} x2={activeRadAnnotation.cx + activeRadAnnotation.r} y2={activeRadAnnotation.cy} stroke={radPenColor} strokeWidth={1} strokeDasharray="2 2" />
-                      <text 
-                        x={activeRadAnnotation.cx + activeRadAnnotation.r + 5} 
-                        y={activeRadAnnotation.cy + 4} 
-                        fill={radPenColor} 
-                        className="text-[9px] font-mono font-bold bg-[#020814]/85 px-1 rounded border border-slate-800"
-                        style={{ textShadow: '1px 1px 1px #000' }}
-                      >
-                        Ø {(activeRadAnnotation.r * 2 * 0.25).toFixed(1)} mm
-                      </text>
-                    </g>
+                    <circle 
+                      cx={activeRadAnnotation.cx} 
+                      cy={activeRadAnnotation.cy} 
+                      r={activeRadAnnotation.r} 
+                      fill="none" 
+                      stroke={radPenColor || '#ef4444'} 
+                      strokeWidth={radPenWidth || 3} 
+                    />
                   )}
                   {activeRadAnnotation.type === 'ruler' && (
                     <g>
@@ -4707,58 +5082,7 @@ export default function JifrafFuturisticApp() {
                 </>
               )}
             </svg>
-
-            <button
-              type="button"
-              onClick={() => {
-                setShowStethToolbar((prev) => !prev);
-                setStethShowPenConfig(false);
-              }}
-              className="absolute right-5 bottom-5 z-30 inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-slate-950/90 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-amber-200 shadow-lg hover:bg-amber-950/50"
-              title="Isaretleme bandini ac/kapat"
-            >
-              <Crosshair className="w-3.5 h-3.5" />
-              Isaretle
-            </button>
           </div>
-
-          {stethAiSummaryBalloon && (
-            <div className="border-t border-amber-900/40 bg-[#020814]/96 px-4 py-4 max-h-[34vh] overflow-y-auto">
-              <div className="rounded-xl border border-amber-900/50 bg-slate-950/65 p-4 text-slate-200 shadow-inner">
-                <div className="flex items-center justify-between gap-3 border-b border-amber-900/40 pb-3 mb-4">
-                  <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-amber-300" />
-                    <div>
-                      <div className="text-sm font-bold text-amber-200">Oskultasyon Raporu</div>
-                      <div className="text-[10px] text-slate-500">Klinisyen on inceleme taslagi</div>
-                    </div>
-                  </div>
-                  <div className="text-[9px] font-mono uppercase text-red-300 border border-red-500/30 rounded px-2 py-1 bg-red-950/20">
-                    Clinician review required
-                  </div>
-                </div>
-                <div className="space-y-4 text-[12px] leading-relaxed">
-                  <section>
-                    <div className="text-[11px] font-bold text-amber-300 mb-1">Dinleme Bulgusu:</div>
-                    <p>{stethAiSummaryBalloon.ritim}</p>
-                    <p>{stethAiSummaryBalloon.stSegment}</p>
-                  </section>
-                  <section>
-                    <div className="text-[11px] font-bold text-amber-300 mb-1">Yorum:</div>
-                    <p>Isaretli ses odagi varsa zamanlama, siddet, solunumla degisim, komsu dinleme alanlari ve artefakt olasiligi birlikte degerlendirilmelidir.</p>
-                  </section>
-                  <section>
-                    <div className="text-[11px] font-bold text-amber-300 mb-1">Sonuc:</div>
-                    <p>{stethAiSummaryBalloon.aksiyon}</p>
-                  </section>
-                  <section className="border-t border-slate-800 pt-3 text-[11px] text-slate-400">
-                    <div className="font-bold text-red-300 mb-1">Klinik Not:</div>
-                    <p>Bu cikti kesin tani degildir. Nihai tani, tedavi ve uygulama karari hekim/Patron ve ilgili uzman degerlendirmesindedir.</p>
-                  </section>
-                </div>
-              </div>
-            </div>
-          )}
 
           {renderInlineClinicalReviewPanel(radFocusedAdvisory, "Radyoloji Raporu")}
 
@@ -4767,7 +5091,10 @@ export default function JifrafFuturisticApp() {
               ekgViewMode="processed"
               setEkgViewMode={() => {}}
               ekgTool={radTool}
-              setEkgTool={setRadTool}
+              setEkgTool={(tool) => {
+                setRadTool(tool);
+                if (tool) setRadCTRMode(false);
+              }}
               penColor={radPenColor}
               setPenColor={setRadPenColor}
               penWidth={radPenWidth}
@@ -4781,6 +5108,17 @@ export default function JifrafFuturisticApp() {
               aiConsulting={radAiConsulting}
               setAiConsulting={setRadAiConsulting}
               onTriggerAISweep={runRadFocusedAdvisory}
+              dicomWW={dicomWW}
+              setDicomWW={setDicomWW}
+              dicomWL={dicomWL}
+              setDicomWL={setDicomWL}
+              onStartCTR={() => {
+                setRadCTRMode(true);
+                setRadCTRPoints([]);
+                setRadCTRResult(null);
+                setRadTool(null);
+              }}
+              ctrActive={radCTRMode}
             />
           )}
         </div>
@@ -4895,11 +5233,16 @@ export default function JifrafFuturisticApp() {
 
             {/* Interactive SVG Drawing Overlay */}
             <svg 
-              className="absolute inset-0 w-full h-full select-none"
+              viewBox="0 0 1000 1000"
+              preserveAspectRatio="none"
+              className="absolute inset-0 w-full h-full select-none touch-none"
               style={{ cursor: stethTool ? 'crosshair' : 'default', zIndex: 10 }}
               onMouseDown={handleStethMouseDown}
               onMouseMove={handleStethMouseMove}
               onMouseUp={handleStethMouseUp}
+              onTouchStart={handleStethMouseDown}
+              onTouchMove={handleStethMouseMove}
+              onTouchEnd={handleStethMouseUp}
               onContextMenu={(e) => e.preventDefault()}
             >
               {/* Completed annotations */}
@@ -4925,16 +5268,13 @@ export default function JifrafFuturisticApp() {
                         cy={ann.cy} 
                         r={ann.r} 
                         fill="none" 
-                        stroke={ann.color} 
-                        strokeWidth={ann.width} 
-                        strokeDasharray="4 3"
-                        className="cursor-pointer hover:stroke-cyan-400"
-                        style={{ cursor: 'pointer' }}
+                        stroke={ann.color || '#f59e0b'} 
+                        strokeWidth={ann.width || 3} 
+                        className="cursor-move hover:stroke-cyan-400"
+                        style={{ cursor: 'move' }}
                       >
-                        <title>Sağ Tıklayıp Sürükleyerek Taşıyın</title>
+                        <title>Tıklayıp Sürükleyerek Taşıyın</title>
                       </circle>
-                      <circle cx={ann.cx} cy={ann.cy} r={3} fill={ann.color} />
-                      <line x1={ann.cx} y1={ann.cy} x2={ann.cx + ann.r} y2={ann.cy} stroke={ann.color} strokeWidth={1} strokeDasharray="2 2" />
                     </g>
                   );
                 } else if (ann.type === 'ruler') {
@@ -5074,27 +5414,42 @@ export default function JifrafFuturisticApp() {
     );
   };
 
-  const renderTanilarForm = () => {
+    const renderTanilarForm = () => {
     return (
-      <div className="flex flex-col min-h-0 h-full p-4 overflow-y-auto [&::-webkit-scrollbar]:hidden font-sans text-slate-300 bg-[#020617]/50 rounded-xl">
+      <div className="flex flex-col min-h-0 h-full p-4 overflow-y-auto [&::-webkit-scrollbar]:hidden font-sans text-slate-300 bg-[#020617]/50 rounded-xl relative">
         <h2 className="text-cyan-400 font-semibold flex items-center justify-between border-b border-cyan-500/30 pb-3 mb-4 shrink-0 text-xs md:text-sm">
           <div className="flex items-center gap-2">
             <HeartPulse className="w-5 h-5 text-cyan-400 animate-pulse" />
             <span>Tanı & Klinik Kanaat İstasyonu</span>
           </div>
-          <div className="text-[10px] font-mono text-cyan-500 uppercase tracking-widest px-2.5 py-1 rounded bg-cyan-950/30 border border-cyan-800/40">
-            {t("active_protocol")} {clinicalProtocolId}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsVirtualKeyboardOpen(prev => !prev)}
+              className={`flex items-center gap-1.5 px-3 py-1 text-[10px] font-mono font-bold uppercase rounded border transition-all cursor-pointer ${
+                isVirtualKeyboardOpen 
+                  ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.4)]'
+                  : 'bg-cyan-950/40 border-cyan-500/60 text-cyan-300 hover:bg-cyan-900/50'
+              }`}
+            >
+              <Keyboard className="w-3.5 h-3.5" />
+              <span>{isVirtualKeyboardOpen ? "Sanal Klavye Açık" : "Sanal Klavyeyi Aç"}</span>
+            </button>
+            <div className="text-[10px] font-mono text-cyan-500 uppercase tracking-widest px-2.5 py-1 rounded bg-cyan-950/30 border border-cyan-800/40 hidden md:block">
+              {t("active_protocol")} {clinicalProtocolId}
+            </div>
           </div>
         </h2>
 
         {intakeSuccessMessage && (
-          <div className="bg-emerald-950/30 border border-emerald-500/50 p-2.5 rounded-lg text-emerald-400 text-xs font-mono mb-4 leading-normal select-text shrink-0">
-            ✅ {intakeSuccessMessage}
+          <div className="bg-emerald-950/30 border border-emerald-500/50 p-2.5 rounded-lg text-emerald-400 text-xs font-mono mb-4 leading-normal select-text shrink-0 flex items-center justify-between">
+            <span>✅ {intakeSuccessMessage}</span>
+            <button type="button" onClick={() => setIntakeSuccessMessage(null)} className="text-slate-500 hover:text-white text-xs font-bold font-mono">X</button>
           </div>
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
-          {/* {t("differential_considerations")} */}
+          {/* Differential Considerations */}
           <div className="space-y-4 border border-cyan-900/30 bg-[#020814]/40 p-4 rounded-xl flex flex-col min-h-[300px]">
             <h3 className="text-xs font-bold text-slate-200 uppercase tracking-widest flex items-center gap-2 font-mono border-b border-slate-900 pb-2 shrink-0">
               <BrainCircuit className="w-4 h-4 text-cyan-500" />
@@ -5125,44 +5480,88 @@ export default function JifrafFuturisticApp() {
 
             <div className="space-y-3.5 flex-1">
               <div>
-                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider block mb-1">
-                  {t("clinician_impression")}
-                </label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider">
+                    {t("clinician_impression")}
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => toggleInputZoom('clinician_impression', 'Hekim Tanısı', clinicianImpression, setClinicianImpression)}
+                      className="p-1 rounded text-slate-400 hover:text-cyan-300 text-[10px]"
+                      title="Genişlet"
+                    >
+                      <Maximize2 className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleInputVoice('clinician_impression', setClinicianImpression, clinicianImpression, 'Hekim Tanısı')}
+                      className={`p-1 rounded border ${activeVoiceInputId === 'clinician_impression' ? 'bg-red-950 border-red-500 text-red-400 animate-pulse' : 'text-slate-500 border-slate-800 hover:text-cyan-400'}`}
+                    >
+                      <Mic className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
                 <input 
                   type="text"
                   value={clinicianImpression}
+                  onFocus={() => handleFieldFocusForKeyboard('Hekim Tanısı', setClinicianImpression, clinicianImpression)}
+                  onClick={() => toggleInputZoom('clinician_impression', 'Hekim Tanısı', clinicianImpression, setClinicianImpression)}
                   onChange={(e) => setClinicianImpression(e.target.value)}
                   placeholder="Örn: Pulmoner Emboli Şüphesi"
-                  className="w-full bg-[#020814] border border-cyan-900/55 rounded-lg py-2 px-3 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors shadow-inner"
+                  className={`w-full bg-[#020814] border rounded-lg py-2 px-3 text-xs text-slate-200 focus:outline-none transition-colors shadow-inner cursor-pointer ${
+                    activeVoiceInputId === 'clinician_impression' ? 'border-red-500 animate-pulse' : 'border-cyan-900/55 focus:border-cyan-500'
+                  }`}
                 />
               </div>
 
               <div>
-                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider block mb-1">
-                  {t("clinician_notes")}
-                </label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider">
+                    Tanı Notu & Gerekçelendirme
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => toggleInputZoom('diagnosis_notes', 'Tanı Notu', diagnosisNotes, setDiagnosisNotes)}
+                      className="p-1 rounded text-slate-400 hover:text-cyan-300 text-[10px]"
+                      title="Genişlet"
+                    >
+                      <Maximize2 className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleInputVoice('diagnosis_notes', setDiagnosisNotes, diagnosisNotes, 'Tanı Notu')}
+                      className={`p-1 rounded border ${activeVoiceInputId === 'diagnosis_notes' ? 'bg-red-950 border-red-500 text-red-400 animate-pulse' : 'text-slate-500 border-slate-800 hover:text-cyan-400'}`}
+                    >
+                      <Mic className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
                 <textarea 
-                  rows={6}
+                  rows={4}
                   value={diagnosisNotes}
+                  onFocus={() => handleFieldFocusForKeyboard('Tanı Notu', setDiagnosisNotes, diagnosisNotes)}
+                  onClick={() => toggleInputZoom('diagnosis_notes', 'Tanı Notu', diagnosisNotes, setDiagnosisNotes)}
                   onChange={(e) => setDiagnosisNotes(e.target.value)}
-                  placeholder="Nihai tanıya yönelik ek klinik notlar, diferansiyel tanı ekarte nedenleri ve hekim açıklaması..."
-                  className="w-full bg-[#020814] border border-cyan-900/55 rounded-lg py-2 px-3 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors shadow-inner resize-none font-sans"
+                  placeholder="Hastanın tanı gerekçeleri, ayırıcı tanı notları ve tedaviye başlama planını buraya girin..."
+                  className={`w-full bg-[#020814] border rounded-lg py-2 px-3 text-xs text-slate-200 focus:outline-none font-sans shadow-inner resize-y cursor-pointer ${
+                    activeVoiceInputId === 'diagnosis_notes' ? 'border-red-500 animate-pulse' : 'border-cyan-900/55 focus:border-cyan-500'
+                  }`}
                 />
               </div>
             </div>
           </div>
         </div>
 
-        <div className="mt-4 shrink-0">
-          <button 
+        {/* Action Bar */}
+        <div className="mt-4 pt-3 border-t border-cyan-900/30 flex justify-end gap-3 shrink-0">
+          <button
             type="button"
-            onClick={() => {
-              setIntakeSuccessMessage("Klinik tanı ve notlar başarıyla taslağa kaydedildi!");
-              setTimeout(() => setIntakeSuccessMessage(null), 3000);
-            }}
-            className="w-full py-3.5 rounded-xl border border-cyan-500 bg-cyan-950/40 text-cyan-300 font-extrabold text-xs tracking-widest shadow-[0_0_15px_rgba(6,182,212,0.2)] hover:bg-cyan-800/40 hover:shadow-[0_0_25px_rgba(6,182,212,0.45)] transition-all select-none uppercase font-mono cursor-pointer"
+            onClick={handleRegisterVisit}
+            className="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded-lg text-xs font-mono uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(6,182,212,0.3)] hover:shadow-[0_0_20px_rgba(6,182,212,0.5)] cursor-pointer"
           >
-            Tanı ve Kanaati Kaydet
+            💾 Klinik Tanıyı Kaydet & Onayla
           </button>
         </div>
       </div>
@@ -8465,6 +8864,82 @@ export default function JifrafFuturisticApp() {
         </div>
       </div>
 
+      {/* CTR Clinician Guide Modal */}
+      {showCTRHelpModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-[#0a0f1d] border border-cyan-500/40 rounded-2xl max-w-lg w-full p-5 text-slate-200 font-sans shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-cyan-400 font-bold text-sm font-mono">
+                <span>🫀 Kardiyotorasik Oran (CTR) Klinik Ölçüm Rehberi</span>
+              </div>
+              <button
+                onClick={() => setShowCTRHelpModal(false)}
+                className="text-slate-400 hover:text-white text-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs leading-relaxed text-slate-300">
+              <div className="bg-cyan-950/30 border border-cyan-800/40 p-3 rounded-xl font-mono text-[11px] text-cyan-300">
+                <div className="font-bold text-cyan-200 mb-1">📐 Formül & Klinik Tanım:</div>
+                <div>CTR = (Sol Kalp Genişliği + Sağ Kalp Genişliği) / İç Toraks Genişliği</div>
+                <div className="mt-1 text-[10px] text-slate-400">
+                  • ≤ 0.50 : Normal Kalp Boyutu
+                  <br />
+                  • &gt; 0.50 : Kardiyomegali (Kalp Büyümesi) Şüphesi
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="font-bold text-cyan-400 font-mono uppercase text-[11px]">📍 Noktaları Yerleştirme Sırası (4 Adım):</div>
+                
+                <div className="flex items-start gap-2 bg-slate-900/60 p-2 rounded-lg border border-slate-800">
+                  <span className="px-1.5 py-0.5 rounded bg-red-950 text-red-400 font-mono text-[10px] font-bold shrink-0">1. Nokta</span>
+                  <div>
+                    <strong className="text-slate-200">Sol Kalp Dış Sınırı:</strong> PA grafide sol ventrikül dış sınırındaki en uzak sol kenar.
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2 bg-slate-900/60 p-2 rounded-lg border border-slate-800">
+                  <span className="px-1.5 py-0.5 rounded bg-red-950 text-red-400 font-mono text-[10px] font-bold shrink-0">2. Nokta</span>
+                  <div>
+                    <strong className="text-slate-200">Sağ Kalp Dış Sınırı:</strong> PA grafide sağ atrium dış sınırındaki en uzak sağ kenar.
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2 bg-slate-900/60 p-2 rounded-lg border border-slate-800">
+                  <span className="px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-400 font-mono text-[10px] font-bold shrink-0">3. Nokta</span>
+                  <div>
+                    <strong className="text-slate-200">Sol Toraks İç Kot Sınırı:</strong> Diyafram kubbesinin üst seviyesindeki iç toraks/kot kenarı.
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2 bg-slate-900/60 p-2 rounded-lg border border-slate-800">
+                  <span className="px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-400 font-mono text-[10px] font-bold shrink-0">4. Nokta</span>
+                  <div>
+                    <strong className="text-slate-200">Sağ Toraks İç Kot Sınırı:</strong> Diyafram kubbesinin üst seviyesindeki iç toraks/kot kenarı.
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-amber-950/20 border border-amber-800/40 p-2.5 rounded-xl text-[11px] text-amber-300 font-mono">
+                💡 <strong>Klinik İpucu:</strong> Doğru kardiyak oran hesabı için grafinin PA pozisyonda ve tam inspiryumda çekilmiş olması önerilir.
+              </div>
+            </div>
+
+            <div className="flex justify-end border-t border-slate-800 pt-3">
+              <button
+                onClick={() => setShowCTRHelpModal(false)}
+                className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded-lg text-xs font-mono transition-all cursor-pointer"
+              >
+                Anladım, Ölçüme Başla
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 4. CLINICAL WORKSPACE FLOATING WINDOWS */}
       {openPanels.intake && (
         <WorkspaceWindow
@@ -8486,8 +8961,22 @@ export default function JifrafFuturisticApp() {
                 <User className="w-5 h-5 text-cyan-400" />
                 <span>{t("workstation_ingestion")}</span>
               </div>
-              <div className="text-[10px] font-mono text-cyan-500 uppercase tracking-widest px-2.5 py-1 rounded bg-cyan-950/30 border border-cyan-800/40 font-mono">
-                {t("active_protocol")} {clinicalProtocolId}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsVirtualKeyboardOpen(prev => !prev)}
+                  className={`flex items-center gap-1.5 px-3 py-1 text-[10px] font-mono font-bold uppercase rounded border transition-all cursor-pointer ${
+                    isVirtualKeyboardOpen 
+                      ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.4)]'
+                      : 'bg-cyan-950/40 border-cyan-500/60 text-cyan-300 hover:bg-cyan-900/50'
+                  }`}
+                >
+                  <Keyboard className="w-3.5 h-3.5" />
+                  <span>{isVirtualKeyboardOpen ? "Sanal Klavye Açık" : "Sanal Klavyeyi Aç"}</span>
+                </button>
+                <div className="text-[10px] font-mono text-cyan-500 uppercase tracking-widest px-2.5 py-1 rounded bg-cyan-950/30 border border-cyan-800/40 hidden md:block">
+                  {t("active_protocol")} {clinicalProtocolId}
+                </div>
               </div>
             </h2>
             
@@ -8578,23 +9067,39 @@ export default function JifrafFuturisticApp() {
                     <div className="space-y-2.5">
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="text-[9px] text-slate-400 uppercase font-mono block mb-1">Ad*</label>
+                          <div className="flex justify-between items-center mb-1">
+                            <label className="text-[9px] text-slate-400 uppercase font-mono">Ad*</label>
+                            <div className="flex items-center gap-0.5">
+                              <button type="button" onClick={() => toggleInputZoom('intake_ad', 'Ad', patientFirstName, setPatientFirstName)} className="p-0.5 rounded text-slate-500 hover:text-cyan-300"><Maximize2 className="w-2.5 h-2.5" /></button>
+                              <button type="button" onClick={() => toggleInputVoice('intake_ad', setPatientFirstName, patientFirstName, 'Ad')} className={`p-0.5 rounded ${activeVoiceInputId === 'intake_ad' ? 'text-red-400 animate-pulse' : 'text-slate-500 hover:text-cyan-400'}`}><Mic className="w-2.5 h-2.5" /></button>
+                            </div>
+                          </div>
                           <input 
                             type="text" 
                             value={patientFirstName}
+                            onFocus={() => handleFieldFocusForKeyboard('Ad', setPatientFirstName, patientFirstName)}
+                            onClick={() => toggleInputZoom('intake_ad', 'Ad', patientFirstName, setPatientFirstName)}
                             onChange={(e) => setPatientFirstName(e.target.value)}
                             placeholder="Örn: Ahmet"
-                            className="w-full bg-[#020814] border border-cyan-900/55 rounded-lg py-1.5 px-2.5 text-xs text-slate-350 focus:outline-none focus:border-cyan-500 transition-colors"
+                            className={`w-full bg-[#020814] border rounded-lg py-1.5 px-2.5 text-xs text-slate-350 focus:outline-none transition-colors cursor-pointer ${activeVoiceInputId === 'intake_ad' ? 'border-red-500' : 'border-cyan-900/55 focus:border-cyan-500'}`}
                           />
                         </div>
                         <div>
-                          <label className="text-[9px] text-slate-400 uppercase font-mono block mb-1">Soyad*</label>
+                          <div className="flex justify-between items-center mb-1">
+                            <label className="text-[9px] text-slate-400 uppercase font-mono">Soyad*</label>
+                            <div className="flex items-center gap-0.5">
+                              <button type="button" onClick={() => toggleInputZoom('intake_soyad', 'Soyad', patientLastName, setPatientLastName)} className="p-0.5 rounded text-slate-500 hover:text-cyan-300"><Maximize2 className="w-2.5 h-2.5" /></button>
+                              <button type="button" onClick={() => toggleInputVoice('intake_soyad', setPatientLastName, patientLastName, 'Soyad')} className={`p-0.5 rounded ${activeVoiceInputId === 'intake_soyad' ? 'text-red-400 animate-pulse' : 'text-slate-500 hover:text-cyan-400'}`}><Mic className="w-2.5 h-2.5" /></button>
+                            </div>
+                          </div>
                           <input 
                             type="text" 
                             value={patientLastName}
+                            onFocus={() => handleFieldFocusForKeyboard('Soyad', setPatientLastName, patientLastName)}
+                            onClick={() => toggleInputZoom('intake_soyad', 'Soyad', patientLastName, setPatientLastName)}
                             onChange={(e) => setPatientLastName(e.target.value)}
                             placeholder="Örn: Yılmaz"
-                            className="w-full bg-[#020814] border border-cyan-900/55 rounded-lg py-1.5 px-2.5 text-xs text-slate-355 focus:outline-none focus:border-cyan-500 transition-colors"
+                            className={`w-full bg-[#020814] border rounded-lg py-1.5 px-2.5 text-xs text-slate-355 focus:outline-none transition-colors cursor-pointer ${activeVoiceInputId === 'intake_soyad' ? 'border-red-500' : 'border-cyan-900/55 focus:border-cyan-500'}`}
                           />
                         </div>
                       </div>
@@ -8646,24 +9151,40 @@ export default function JifrafFuturisticApp() {
                   )}
                   
                   <div>
-                    <label className="text-[9px] text-slate-400 uppercase font-mono block mb-1">Aktif İlaçlar (Virgülle ayırın)</label>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-[9px] text-slate-400 uppercase font-mono">Aktif İlaçlar (Virgülle ayırın)</label>
+                      <div className="flex items-center gap-0.5">
+                        <button type="button" onClick={() => toggleInputZoom('intake_ilac', 'Aktif İlaçlar', intakeMedications, setIntakeMedications)} className="p-0.5 rounded text-slate-500 hover:text-cyan-300"><Maximize2 className="w-2.5 h-2.5" /></button>
+                        <button type="button" onClick={() => toggleInputVoice('intake_ilac', setIntakeMedications, intakeMedications, 'İlaçlar')} className={`p-0.5 rounded ${activeVoiceInputId === 'intake_ilac' ? 'text-red-400 animate-pulse' : 'text-slate-500 hover:text-cyan-400'}`}><Mic className="w-2.5 h-2.5" /></button>
+                      </div>
+                    </div>
                     <input 
                       type="text" 
                       value={intakeMedications}
+                      onFocus={() => handleFieldFocusForKeyboard('Aktif İlaçlar', setIntakeMedications, intakeMedications)}
+                      onClick={() => toggleInputZoom('intake_ilac', 'Aktif İlaçlar', intakeMedications, setIntakeMedications)}
                       onChange={(e) => setIntakeMedications(e.target.value)}
                       placeholder="Örn: metformin, aspirin"
-                      className="w-full bg-[#020814] border border-cyan-900/55 rounded-lg py-1.5 px-2.5 text-xs text-slate-355 focus:outline-none focus:border-cyan-500"
+                      className={`w-full bg-[#020814] border rounded-lg py-1.5 px-2.5 text-xs text-slate-355 focus:outline-none transition-colors cursor-pointer ${activeVoiceInputId === 'intake_ilac' ? 'border-red-500' : 'border-cyan-900/55 focus:border-cyan-500'}`}
                     />
                   </div>
                   
                   <div>
-                    <label className="text-[9px] text-slate-400 uppercase font-mono block mb-1">Alerjiler (Virgülle ayırın)</label>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-[9px] text-slate-400 uppercase font-mono">Alerjiler (Virgülle ayırın)</label>
+                      <div className="flex items-center gap-0.5">
+                        <button type="button" onClick={() => toggleInputZoom('intake_alerji', 'Alerjiler', intakeAllergies, setIntakeAllergies)} className="p-0.5 rounded text-slate-500 hover:text-cyan-300"><Maximize2 className="w-2.5 h-2.5" /></button>
+                        <button type="button" onClick={() => toggleInputVoice('intake_alerji', setIntakeAllergies, intakeAllergies, 'Alerjiler')} className={`p-0.5 rounded ${activeVoiceInputId === 'intake_alerji' ? 'text-red-400 animate-pulse' : 'text-slate-500 hover:text-cyan-400'}`}><Mic className="w-2.5 h-2.5" /></button>
+                      </div>
+                    </div>
                     <input 
                       type="text" 
                       value={intakeAllergies}
+                      onFocus={() => handleFieldFocusForKeyboard('Alerjiler', setIntakeAllergies, intakeAllergies)}
+                      onClick={() => toggleInputZoom('intake_alerji', 'Alerjiler', intakeAllergies, setIntakeAllergies)}
                       onChange={(e) => setIntakeAllergies(e.target.value)}
                       placeholder="Örn: penisilin, fıstık"
-                      className="w-full bg-[#020814] border border-cyan-900/55 rounded-lg py-1.5 px-2.5 text-xs text-slate-355 focus:outline-none focus:border-cyan-500"
+                      className={`w-full bg-[#020814] border rounded-lg py-1.5 px-2.5 text-xs text-slate-355 focus:outline-none transition-colors cursor-pointer ${activeVoiceInputId === 'intake_alerji' ? 'border-red-500' : 'border-cyan-900/55 focus:border-cyan-500'}`}
                     />
                   </div>
                   
@@ -8828,6 +9349,228 @@ export default function JifrafFuturisticApp() {
         >
           {renderAnamnesisForm()}
         </WorkspaceWindow>
+      )}
+
+            {/* ── ENLARGED INPUT READING ZOOM MODAL ── */}
+      {expandedInputInfo && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 selection:bg-cyan-900">
+          <div className="w-full max-w-2xl bg-[#020817] border-2 border-cyan-500 rounded-2xl shadow-[0_0_50px_rgba(6,182,212,0.4)] p-5 flex flex-col gap-4 font-sans text-slate-200 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-cyan-500/40 pb-3">
+              <div className="flex items-center gap-2">
+                <ZoomIn className="w-5 h-5 text-cyan-400 animate-pulse" />
+                <h3 className="text-sm md:text-base font-bold text-cyan-300 uppercase font-mono tracking-wider">
+                  Büyütülmüş Okuma & Düzenleme Modu: <span className="text-white">{expandedInputInfo.label}</span>
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => toggleInputVoice(expandedInputInfo.id, expandedInputInfo.setter, expandedInputInfo.value, expandedInputInfo.label)}
+                  className={`flex items-center gap-1.5 px-3 py-1 text-xs font-mono font-bold uppercase rounded border transition-all cursor-pointer ${
+                    activeVoiceInputId === expandedInputInfo.id
+                      ? 'bg-red-950 border-red-500 text-red-400 animate-pulse'
+                      : 'bg-cyan-950/40 border-cyan-500/60 text-cyan-300 hover:bg-cyan-900/50'
+                  }`}
+                >
+                  <Mic className="w-3.5 h-3.5" />
+                  <span>{activeVoiceInputId === expandedInputInfo.id ? "DİNLENİYOR..." : "Sesli Yaz"}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExpandedInputInfo(null)}
+                  className="px-3 py-1 bg-cyan-950 border border-cyan-500/50 text-cyan-400 hover:bg-cyan-800 hover:text-white text-xs font-mono font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                >
+                  <Minimize2 className="w-3.5 h-3.5" />
+                  <span>Orijinal Boyuta Dön (X)</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="relative">
+              <textarea
+                rows={8}
+                autoFocus
+                value={expandedInputInfo.value || ''}
+                onFocus={() => handleFieldFocusForKeyboard(expandedInputInfo.label, expandedInputInfo.setter, expandedInputInfo.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  expandedInputInfo.setter(val);
+                  setExpandedInputInfo(prev => prev ? { ...prev, value: val } : null);
+                }}
+                placeholder={`${expandedInputInfo.label} bilgisini buraya detaylıca yazabilir veya düzenleyebilirsiniz...`}
+                className="w-full bg-[#01040d] border-2 border-cyan-500/70 rounded-xl p-4 text-sm md:text-base text-slate-100 focus:outline-none focus:border-cyan-400 font-sans shadow-inner leading-relaxed resize-y"
+              />
+              <div className="text-[10px] font-mono text-slate-500 text-right mt-1">
+                Karakter Sayısı: {(expandedInputInfo.value || '').length} | Esc veya butona basarak kapatabilirsiniz
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center pt-2 border-t border-slate-900">
+              <button
+                type="button"
+                onClick={() => setIsVirtualKeyboardOpen(prev => !prev)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-950/60 border border-cyan-500/60 hover:bg-cyan-900 text-cyan-300 text-xs font-mono font-bold rounded-lg transition-all cursor-pointer"
+              >
+                <Keyboard className="w-4 h-4" />
+                <span>{isVirtualKeyboardOpen ? "Sanal Klavyeyi Gizle" : "Sanal Klavyeyi Kullan"}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setExpandedInputInfo(null)}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs font-mono uppercase tracking-wider rounded-lg shadow-lg cursor-pointer transition-all"
+              >
+                ✓ Değişiklikleri Onayla & Kapat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── DRAGGABLE POPUP VIRTUAL KEYBOARD ── */}
+      {isVirtualKeyboardOpen && (
+        <div 
+          style={{ left: `${keyboardPos.x}px`, top: `${keyboardPos.y}px` }}
+          className="fixed z-50 w-80 md:w-96 bg-[#020817]/95 border-2 border-cyan-500/80 rounded-2xl shadow-[0_0_30px_rgba(6,182,212,0.3)] backdrop-blur-md flex flex-col font-sans select-none overflow-hidden text-slate-200"
+        >
+          {/* Header Drag Handle */}
+          <div 
+            onPointerDown={(e) => {
+              e.currentTarget.setPointerCapture(e.pointerId);
+              setIsDraggingKeyboard(true);
+              setDragKeyboardStart({ x: e.clientX - keyboardPos.x, y: e.clientY - keyboardPos.y });
+            }}
+            onPointerMove={(e) => {
+              if (isDraggingKeyboard) {
+                const newX = Math.max(10, Math.min(window.innerWidth - 380, e.clientX - dragKeyboardStart.x));
+                const newY = Math.max(10, Math.min(window.innerHeight - 300, e.clientY - dragKeyboardStart.y));
+                setKeyboardPos({ x: newX, y: newY });
+              }
+            }}
+            onPointerUp={(e) => {
+              try { e.currentTarget.releasePointerCapture(e.pointerId); } catch(err) {}
+              setIsDraggingKeyboard(false);
+            }}
+            className="flex items-center justify-between p-2.5 bg-cyan-950/60 border-b border-cyan-500/40 cursor-grab active:cursor-grabbing shrink-0"
+          >
+            <div className="flex items-center gap-2">
+              <Move className="w-4 h-4 text-cyan-400 animate-pulse" />
+              <span className="text-xs font-bold text-cyan-300 uppercase font-mono tracking-wider">Sanal Klavye (Dokunmatik/Tıkla)</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setKeyboardLayoutTab(prev => prev === 'vitals' ? 'letters' : 'vitals')}
+                className="px-2 py-0.5 bg-cyan-900/40 border border-cyan-500/50 hover:bg-cyan-800/60 text-cyan-300 rounded text-[9px] font-mono font-bold uppercase transition-all cursor-pointer"
+              >
+                {keyboardLayoutTab === 'vitals' ? "🔤 Harfler" : "🔢 Vital / Rakam"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsVirtualKeyboardOpen(false)}
+                className="p-1 hover:bg-red-950/60 text-slate-400 hover:text-red-400 rounded transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Active Field Display */}
+          <div className="px-3 py-1.5 bg-[#020617] border-b border-slate-900 text-[10px] font-mono text-cyan-400/80 flex items-center justify-between">
+            <span>Aktif Alan: <strong className="text-white">{keyboardActiveFieldId}</strong></span>
+            <span className="text-slate-500">Girdi için tuşlara basın</span>
+          </div>
+
+          {/* Keypads */}
+          <div className="p-3 space-y-2 max-h-72 overflow-y-auto [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-cyan-800">
+            {keyboardLayoutTab === 'vitals' ? (
+              <div className="space-y-2">
+                {/* Quick Medical Units */}
+                <div className="grid grid-cols-4 gap-1.5">
+                  {["120/80", "145", "37.5", "98", "mmHg", "bpm", "°C", "%SpO2"].map(unit => (
+                    <button
+                      key={unit}
+                      type="button"
+                      onClick={() => handleVirtualKeyPress(` ${unit}`)}
+                      className="py-1.5 px-1 bg-cyan-950/30 border border-cyan-800/60 hover:border-cyan-400 hover:bg-cyan-900/50 text-cyan-300 rounded text-[10px] font-mono font-bold transition-all cursor-pointer text-center"
+                    >
+                      {unit}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Keypad Grid */}
+                <div className="grid grid-cols-3 gap-1.5 pt-1">
+                  {["7", "8", "9", "4", "5", "6", "1", "2", "3", "0", "/", "."].map(num => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => handleVirtualKeyPress(num)}
+                      className="py-2.5 bg-slate-900/80 border border-slate-800 hover:border-cyan-500 text-slate-100 font-bold text-sm rounded-lg font-mono shadow-sm hover:bg-cyan-950/50 transition-all cursor-pointer text-center"
+                    >
+                      {num}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {/* Turkish QWERTY Letter Rows */}
+                {[
+                  ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "Ğ", "Ü"],
+                  ["A", "S", "D", "F", "G", "H", "J", "K", "L", "Ş", "İ"],
+                  ["Z", "X", "C", "V", "B", "N", "M", "Ö", "Ç"]
+                ].map((row, rIdx) => (
+                  <div key={rIdx} className="flex justify-center gap-1">
+                    {row.map(char => (
+                      <button
+                        key={char}
+                        type="button"
+                        onClick={() => handleVirtualKeyPress(char.toLowerCase())}
+                        className="flex-1 py-2 bg-slate-900/80 border border-slate-800 hover:border-cyan-500 text-slate-200 font-bold text-xs rounded hover:bg-cyan-950/50 transition-all cursor-pointer text-center font-mono"
+                      >
+                        {char}
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Action Bar */}
+            <div className="grid grid-cols-4 gap-1.5 pt-2 border-t border-slate-900">
+              <button
+                type="button"
+                onClick={() => handleVirtualKeyPress('BACKSPACE')}
+                className="py-2 bg-amber-950/30 border border-amber-800/60 hover:bg-amber-900/50 text-amber-400 font-bold text-[10px] font-mono uppercase rounded-lg flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <Delete className="w-3.5 h-3.5" />
+                <span>Geri Sil</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleVirtualKeyPress('SPACE')}
+                className="py-2 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 font-bold text-[10px] font-mono uppercase rounded-lg cursor-pointer"
+              >
+                Boşluk
+              </button>
+              <button
+                type="button"
+                onClick={() => handleVirtualKeyPress('CLEAR')}
+                className="py-2 bg-red-950/30 border border-red-800/60 hover:bg-red-900/50 text-red-400 font-bold text-[10px] font-mono uppercase rounded-lg cursor-pointer"
+              >
+                Temizle
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsVirtualKeyboardOpen(false)}
+                className="py-2 bg-emerald-950/40 border border-emerald-500/60 hover:bg-emerald-900/60 text-emerald-300 font-bold text-[10px] font-mono uppercase rounded-lg flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <CornerDownLeft className="w-3.5 h-3.5" />
+                <span>Tamam</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {openPanels.radyoloji && (
@@ -10804,7 +11547,13 @@ function FloatingToolbar({
   handleSidebarClick,
   aiConsulting,
   setAiConsulting,
-  onTriggerAISweep
+  onTriggerAISweep,
+  dicomWW,
+  setDicomWW,
+  dicomWL,
+  setDicomWL,
+  onStartCTR,
+  ctrActive
 }) {
   return (
     <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50">
@@ -11004,6 +11753,60 @@ function FloatingToolbar({
             <path d="M12 9v6" />
           </svg>
         </button>
+
+        <div className="w-px h-4 bg-[#333] mx-1" />
+
+        {/* 8. CTR Ölçüm Aracı (Kardiyotorasik Oran) */}
+        {onStartCTR && (
+          <button 
+            onClick={onStartCTR}
+            className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+              ctrActive 
+                ? 'text-rose-400 bg-rose-950/40 border border-rose-800/40 animate-pulse' 
+                : 'text-[#a0a0a0] hover:text-white hover:bg-[#2d2d2d]'
+            }`}
+            title="Kardiyotorasik Oran (CTR) Ölçümü — 4 Nokta ile"
+          >
+            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2C8 2 5 5.5 5 10c0 3.5 2 6 3 7.5C9 19 10 21 12 22c2-1 3-3 4-4.5C17 16 19 13.5 19 10c0-4.5-3-8-7-8Z" />
+              <line x1="3" y1="12" x2="21" y2="12" strokeDasharray="3 2" />
+              <line x1="8" y1="10" x2="16" y2="10" strokeDasharray="3 2" strokeWidth="2.5" />
+            </svg>
+          </button>
+        )}
+
+        {/* 9. Contrast/Brightness Sliders */}
+        {setDicomWW && (
+          <div className="relative">
+            <button 
+              onClick={(e) => {
+                const popup = e.currentTarget.nextElementSibling;
+                if (popup) popup.classList.toggle('hidden');
+              }}
+              className="p-1.5 text-[#a0a0a0] hover:text-white hover:bg-[#2d2d2d] rounded-lg transition-colors cursor-pointer"
+              title="Contrast & Brightness Ayarları"
+            >
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="5" />
+                <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+              </svg>
+            </button>
+            <div className="hidden absolute bottom-11 left-1/2 -translate-x-1/2 bg-[#16161a] border border-[#2a2a35] p-3 rounded-xl flex flex-col gap-2 shadow-2xl z-[100] min-w-[170px] font-sans">
+              <span className="text-[8px] font-extrabold text-slate-500 uppercase tracking-widest block text-center">GÖRÜNTÜ AYARLARI</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] text-slate-400 w-16">Contrast</span>
+                <input type="range" min="50" max="200" value={dicomWW || 100} onChange={(e) => setDicomWW(parseInt(e.target.value))} className="flex-1 accent-cyan-500" />
+                <span className="text-[9px] text-cyan-400 font-mono w-8">{dicomWW || 100}%</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] text-slate-400 w-16">Brightness</span>
+                <input type="range" min="50" max="200" value={dicomWL || 100} onChange={(e) => setDicomWL(parseInt(e.target.value))} className="flex-1 accent-cyan-500" />
+                <span className="text-[9px] text-cyan-400 font-mono w-8">{dicomWL || 100}%</span>
+              </div>
+              <button onClick={() => { setDicomWW(100); setDicomWL(100); }} className="text-[8px] text-center bg-slate-800 border border-slate-700 px-2 py-0.5 rounded text-slate-400 hover:text-white cursor-pointer">Reset</button>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>
