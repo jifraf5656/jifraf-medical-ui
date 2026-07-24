@@ -7701,8 +7701,8 @@ export default function JifrafFuturisticApp() {
         {/* 3. MAIN GRID */}
         <div className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-3 min-h-0">
           
-          {/* SIDEBAR (Col 1-2) */}
-          <div className="hidden md:flex md:col-span-2 flex-col border border-cyan-500/50 rounded-xl bg-slate-900/40 p-2 gap-1 overflow-y-auto [&::-webkit-scrollbar]:hidden shadow-[0_0_15px_rgba(6,182,212,0.1)]">
+          {/* SIDEBAR (Col 1-3 on md tablet, Col 1-2 on lg desktop) */}
+          <div className="hidden md:flex md:col-span-3 lg:col-span-2 flex-col border border-cyan-500/50 rounded-xl bg-slate-900/40 p-2 gap-1 overflow-y-auto [&::-webkit-scrollbar]:hidden shadow-[0_0_15px_rgba(6,182,212,0.1)] shrink-0">
             <SidebarItem icon={User} label={t("intake")} active={activeTab==='intake'} onClick={()=>handleSidebarClick('intake')} />
             <SidebarItem icon={ClipboardList} label={t("anamnesis")} active={activeTab==='anamnez'} onClick={()=>handleSidebarClick('anamnez')} />
             <SidebarItem icon={Syringe} label={t("lab")} active={activeTab==='lab'} onClick={()=>handleSidebarClick('lab')} />
@@ -7716,8 +7716,8 @@ export default function JifrafFuturisticApp() {
             <SidebarItem icon={FileText} label={t("summary")} active={activeTab==='ozet'} onClick={()=>handleSidebarClick('ozet')} />
           </div>
 
-          {/* CENTER PANEL (Col 3-9) */}
-          <div className="col-span-12 md:col-span-7 flex flex-col gap-3 min-h-0">
+          {/* CENTER PANEL (Col 4-9 on md tablet, Col 3-9 on lg desktop) */}
+          <div className="col-span-12 md:col-span-6 lg:col-span-7 flex flex-col gap-3 min-h-0">
             
             {activeTab === 'intake' && (
               <div className="flex-1 border border-cyan-500/60 rounded-xl bg-slate-900/30 flex flex-col min-h-0 shadow-[0_0_15px_rgba(6,182,212,0.15)] overflow-y-auto [&::-webkit-scrollbar]:hidden p-4">
@@ -11726,17 +11726,22 @@ function SidebarItem({ icon: Icon, label, active, plugin, onClick }) {
   return (
     <button 
       onClick={onClick}
-      className={`w-full flex items-center justify-between px-3 py-3 rounded-lg text-sm transition-all ${
+      className={`w-full flex items-center justify-between px-2.5 py-2.5 rounded-lg text-xs md:text-xs lg:text-sm font-sans transition-all cursor-pointer select-none ${
         active 
-          ? 'bg-cyan-900/40 border border-cyan-500/50 text-cyan-300 shadow-[inset_0_0_10px_rgba(6,182,212,0.2)]' 
-          : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 border border-transparent'
+          ? 'bg-cyan-950/70 border border-cyan-500/60 text-cyan-200 shadow-[inset_0_0_12px_rgba(6,182,212,0.25)] font-semibold' 
+          : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-100 border border-transparent'
       }`}
+      title={label}
     >
-      <div className="flex items-center gap-3">
-        <Icon className={`w-4 h-4 ${active ? 'text-cyan-400' : 'text-slate-500'}`} />
-        <span className="truncate text-left">{label}</span>
+      <div className="flex items-center gap-2 min-w-0 flex-1">
+        <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-cyan-400 animate-pulse' : 'text-slate-500'}`} />
+        <span className="truncate text-left leading-tight">{label}</span>
       </div>
-      {plugin && <span className="text-[8px] text-amber-500/70 border border-amber-500/30 px-1 rounded ml-2">(PLUGIN)</span>}
+      {plugin && (
+        <span className="text-[8px] text-amber-400/90 bg-amber-950/60 border border-amber-500/40 px-1 py-0.5 rounded font-mono shrink-0 ml-1">
+          PLG
+        </span>
+      )}
     </button>
   );
 }
