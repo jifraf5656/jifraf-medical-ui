@@ -1104,17 +1104,15 @@ export default function JifrafFuturisticApp() {
         points: [{ x, y }]
       });
     } else if (ekgTool === 'circle') {
-      // One-Click Medical Focus Pin Placement
-      const newPin = {
+      // MS Word Style: Start drawing circle from click center, drag to expand
+      setActiveAnnotation({
         type: 'circle',
         cx: x,
         cy: y,
-        r: 30,
+        r: 10,
         color: penColor || '#10b981',
         width: penWidth || 3
-      };
-      setAnnotations(prev => [...prev, newPin]);
-      setActiveAnnotation(null);
+      });
     } else if (ekgTool === 'ruler') {
       setActiveAnnotation({
         type: 'ruler',
@@ -1322,17 +1320,15 @@ export default function JifrafFuturisticApp() {
         points: [{ x, y }]
       });
     } else if (radTool === 'circle') {
-      // One-Click Medical Focus Pin Placement
-      const newPin = {
+      // MS Word Style: Start drawing circle from click center, drag to expand
+      setActiveRadAnnotation({
         type: 'circle',
         cx: x,
         cy: y,
-        r: 30,
+        r: 10,
         color: radPenColor || '#ef4444',
         width: radPenWidth || 3
-      };
-      setRadAnnotations(prev => [...prev, newPin]);
-      setActiveRadAnnotation(null);
+      });
     } else if (radTool === 'ruler') {
       setActiveRadAnnotation({
         type: 'ruler',
@@ -4574,46 +4570,20 @@ JIF-GO AI v1.0 Akıllı Medikal İnceleme ve Otomatik Epikriz Raporudur.
                         />
                       );
                     } else if (ann.type === 'circle') {
-                      const r = ann.r || 30;
                       return (
-                        <g key={idx} className="cursor-move group" style={{ cursor: 'move' }}>
-                          {/* Sleek Medical Target Focus Pin */}
-                          <circle cx={ann.cx} cy={ann.cy} r={r} fill="rgba(16,185,129,0.15)" stroke={ann.color || '#10b981'} strokeWidth={ann.width || 3} />
-                          <circle cx={ann.cx} cy={ann.cy} r={4} fill={ann.color || '#10b981'} />
-                          <line x1={ann.cx - 8} y1={ann.cy} x2={ann.cx + 8} y2={ann.cy} stroke={ann.color || '#10b981'} strokeWidth={1.5} />
-                          <line x1={ann.cx} y1={ann.cy - 8} x2={ann.cx} y2={ann.cy + 8} stroke={ann.color || '#10b981'} strokeWidth={1.5} />
-                          
-                          {/* Odak Badge Bar with [+] [-] [✕] Controls */}
-                          <g className="select-none">
-                            <rect x={ann.cx - 65} y={ann.cy - r - 24} width={130} height={20} rx={10} fill="#020817" stroke={ann.color || '#10b981'} strokeWidth={1.2} />
-                            <text x={ann.cx - 24} y={ann.cy - r - 10} fill="#10b981" textAnchor="middle" className="text-[9px] font-mono font-bold">
-                              📍 Odak #{idx + 1}
-                            </text>
-
-                            {/* [-] Shrink Button */}
-                            <g onClick={(e) => { e.stopPropagation(); setAnnotations(prev => prev.map((a, i) => i === idx ? { ...a, r: Math.max(15, (a.r || 30) - 10) } : a)); }} className="cursor-pointer">
-                              <circle cx={ann.cx + 15} cy={ann.cy - r - 14} r={6.5} fill="#1e293b" stroke="#10b981" strokeWidth={1} />
-                              <text x={ann.cx + 15} y={ann.cy - r - 11.5} fill="#ffffff" textAnchor="middle" className="text-[10px] font-bold font-mono">-</text>
-                            </g>
-
-                            {/* [+] Expand Button */}
-                            <g onClick={(e) => { e.stopPropagation(); setAnnotations(prev => prev.map((a, i) => i === idx ? { ...a, r: Math.min(250, (a.r || 30) + 10) } : a)); }} className="cursor-pointer">
-                              <circle cx={ann.cx + 31} cy={ann.cy - r - 14} r={6.5} fill="#1e293b" stroke="#10b981" strokeWidth={1} />
-                              <text x={ann.cx + 31} y={ann.cy - r - 11.5} fill="#ffffff" textAnchor="middle" className="text-[10px] font-bold font-mono">+</text>
-                            </g>
-
-                            {/* [✕] Delete Button */}
-                            <g onClick={(e) => { e.stopPropagation(); setAnnotations(prev => prev.filter((_, i) => i !== idx)); }} className="cursor-pointer">
-                              <circle cx={ann.cx + 47} cy={ann.cy - r - 14} r={6.5} fill="#ef4444" stroke="#ffffff" strokeWidth={1} />
-                              <text x={ann.cx + 47} y={ann.cy - r - 11.5} fill="#ffffff" textAnchor="middle" className="text-[9px] font-bold font-mono">✕</text>
-                            </g>
-                          </g>
-
-                          {/* Edge Drag-to-Resize Handle Dot */}
-                          <circle cx={ann.cx + r} cy={ann.cy} r={5} fill="#10b981" stroke="#ffffff" strokeWidth={1.5} className="cursor-ew-resize hover:scale-125 transition-transform" style={{ cursor: 'ew-resize' }}>
-                            <title>Çapı büyütmek/küçültmek için çekin</title>
-                          </circle>
-                        </g>
+                        <circle 
+                          key={idx} 
+                          cx={ann.cx} 
+                          cy={ann.cy} 
+                          r={ann.r} 
+                          fill="rgba(16,185,129,0.15)" 
+                          stroke={ann.color || '#10b981'} 
+                          strokeWidth={ann.width || 3} 
+                          className="cursor-move hover:stroke-cyan-300 transition-colors"
+                          style={{ cursor: 'move' }}
+                        >
+                          <title>Tıklayıp Sürükleyerek Taşıyın</title>
+                        </circle>
                       );
                     } else if (ann.type === 'ruler') {
                       const lenPx = Math.sqrt((ann.x2 - ann.x1) ** 2 + (ann.y2 - ann.y1) ** 2);
@@ -4939,46 +4909,20 @@ JIF-GO AI v1.0 Akıllı Medikal İnceleme ve Otomatik Epikriz Raporudur.
                         <path key={idx} d={pathData} fill="none" stroke={ann.color} strokeWidth={ann.width} strokeLinecap="round" strokeLinejoin="round" />
                       );
                     } else if (ann.type === 'circle') {
-                      const r = ann.r || 30;
                       return (
-                        <g key={idx} className="cursor-move group" style={{ cursor: 'move' }}>
-                          {/* Sleek Medical Target Focus Pin */}
-                          <circle cx={ann.cx} cy={ann.cy} r={r} fill="rgba(239,68,68,0.15)" stroke={ann.color || '#ef4444'} strokeWidth={ann.width || 3} />
-                          <circle cx={ann.cx} cy={ann.cy} r={4} fill={ann.color || '#ef4444'} />
-                          <line x1={ann.cx - 8} y1={ann.cy} x2={ann.cx + 8} y2={ann.cy} stroke={ann.color || '#ef4444'} strokeWidth={1.5} />
-                          <line x1={ann.cx} y1={ann.cy - 8} x2={ann.cx} y2={ann.cy + 8} stroke={ann.color || '#ef4444'} strokeWidth={1.5} />
-                          
-                          {/* Odak Badge Bar with [+] [-] [✕] Controls */}
-                          <g className="select-none">
-                            <rect x={ann.cx - 65} y={ann.cy - r - 24} width={130} height={20} rx={10} fill="#020817" stroke={ann.color || '#ef4444'} strokeWidth={1.2} />
-                            <text x={ann.cx - 24} y={ann.cy - r - 10} fill="#ef4444" textAnchor="middle" className="text-[9px] font-mono font-bold">
-                              📍 Odak #{idx + 1}
-                            </text>
-
-                            {/* [-] Shrink Button */}
-                            <g onClick={(e) => { e.stopPropagation(); setRadAnnotations(prev => prev.map((a, i) => i === idx ? { ...a, r: Math.max(15, (a.r || 30) - 10) } : a)); }} className="cursor-pointer">
-                              <circle cx={ann.cx + 15} cy={ann.cy - r - 14} r={6.5} fill="#1e293b" stroke="#ef4444" strokeWidth={1} />
-                              <text x={ann.cx + 15} y={ann.cy - r - 11.5} fill="#ffffff" textAnchor="middle" className="text-[10px] font-bold font-mono">-</text>
-                            </g>
-
-                            {/* [+] Expand Button */}
-                            <g onClick={(e) => { e.stopPropagation(); setRadAnnotations(prev => prev.map((a, i) => i === idx ? { ...a, r: Math.min(250, (a.r || 30) + 10) } : a)); }} className="cursor-pointer">
-                              <circle cx={ann.cx + 31} cy={ann.cy - r - 14} r={6.5} fill="#1e293b" stroke="#ef4444" strokeWidth={1} />
-                              <text x={ann.cx + 31} y={ann.cy - r - 11.5} fill="#ffffff" textAnchor="middle" className="text-[10px] font-bold font-mono">+</text>
-                            </g>
-
-                            {/* [✕] Delete Button */}
-                            <g onClick={(e) => { e.stopPropagation(); setRadAnnotations(prev => prev.filter((_, i) => i !== idx)); }} className="cursor-pointer">
-                              <circle cx={ann.cx + 47} cy={ann.cy - r - 14} r={6.5} fill="#ef4444" stroke="#ffffff" strokeWidth={1} />
-                              <text x={ann.cx + 47} y={ann.cy - r - 11.5} fill="#ffffff" textAnchor="middle" className="text-[9px] font-bold font-mono">✕</text>
-                            </g>
-                          </g>
-
-                          {/* Edge Drag-to-Resize Handle Dot */}
-                          <circle cx={ann.cx + r} cy={ann.cy} r={5} fill="#ef4444" stroke="#ffffff" strokeWidth={1.5} className="cursor-ew-resize hover:scale-125 transition-transform" style={{ cursor: 'ew-resize' }}>
-                            <title>Çapı büyütmek/küçültmek için çekin</title>
-                          </circle>
-                        </g>
+                        <circle 
+                          key={idx} 
+                          cx={ann.cx} 
+                          cy={ann.cy} 
+                          r={ann.r} 
+                          fill="rgba(239,68,68,0.15)" 
+                          stroke={ann.color || '#ef4444'} 
+                          strokeWidth={ann.width || 3} 
+                          className="cursor-move hover:stroke-cyan-300 transition-colors"
+                          style={{ cursor: 'move' }}
+                        >
+                          <title>Tıklayıp Sürükleyerek Taşıyın</title>
+                        </circle>
                       );
                     } else if (ann.type === 'ruler') {
                       const lenPx = Math.sqrt((ann.x2 - ann.x1) ** 2 + (ann.y2 - ann.y1) ** 2);
