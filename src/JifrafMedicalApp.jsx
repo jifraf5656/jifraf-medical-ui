@@ -1103,12 +1103,17 @@ export default function JifrafFuturisticApp() {
         points: [{ x, y }]
       });
     } else if (ekgTool === 'circle') {
-      setActiveAnnotation({
+      // One-Click Medical Focus Pin Placement
+      const newPin = {
         type: 'circle',
         cx: x,
         cy: y,
-        r: 15
-      });
+        r: 30,
+        color: penColor || '#10b981',
+        width: penWidth || 3
+      };
+      setAnnotations(prev => [...prev, newPin]);
+      setActiveAnnotation(null);
     } else if (ekgTool === 'ruler') {
       setActiveAnnotation({
         type: 'ruler',
@@ -1316,12 +1321,17 @@ export default function JifrafFuturisticApp() {
         points: [{ x, y }]
       });
     } else if (radTool === 'circle') {
-      setActiveRadAnnotation({
+      // One-Click Medical Focus Pin Placement
+      const newPin = {
         type: 'circle',
         cx: x,
         cy: y,
-        r: 15
-      });
+        r: 30,
+        color: radPenColor || '#ef4444',
+        width: radPenWidth || 3
+      };
+      setRadAnnotations(prev => [...prev, newPin]);
+      setActiveRadAnnotation(null);
     } else if (radTool === 'ruler') {
       setActiveRadAnnotation({
         type: 'ruler',
@@ -4546,25 +4556,31 @@ JIF-GO AI v1.0 Akıllı Medikal İnceleme ve Otomatik Epikriz Raporudur.
                         />
                       );
                     } else if (ann.type === 'circle') {
+                      const r = ann.r || 30;
                       return (
-                        <g key={idx}>
-                          <circle 
-                            cx={ann.cx} 
-                            cy={ann.cy} 
-                            r={ann.r} 
-                            fill="rgba(16,185,129,0.1)" 
-                            stroke={ann.color || '#10b981'} 
-                            strokeWidth={ann.width || 3} 
-                            className="cursor-move hover:stroke-cyan-300 transition-colors"
-                            style={{ cursor: 'move' }}
+                        <g key={idx} className="cursor-move group" style={{ cursor: 'move' }}>
+                          {/* Sleek Medical Target Focus Pin */}
+                          <circle cx={ann.cx} cy={ann.cy} r={r} fill="rgba(16,185,129,0.15)" stroke={ann.color || '#10b981'} strokeWidth={ann.width || 3} />
+                          <circle cx={ann.cx} cy={ann.cy} r={4} fill={ann.color || '#10b981'} />
+                          <line x1={ann.cx - 8} y1={ann.cy} x2={ann.cx + 8} y2={ann.cy} stroke={ann.color || '#10b981'} strokeWidth={1.5} />
+                          <line x1={ann.cx} y1={ann.cy - 8} x2={ann.cx} y2={ann.cy + 8} stroke={ann.color || '#10b981'} strokeWidth={1.5} />
+                          
+                          {/* Odak Badge Label */}
+                          <text x={ann.cx} y={ann.cy - r - 6} fill="#10b981" textAnchor="middle" className="text-[10px] font-mono font-bold select-none pointer-events-none" style={{ textShadow: '1px 1px 2px #000' }}>
+                            📍 Odak #{idx + 1}
+                          </text>
+
+                          {/* Quick Delete [✕] Button */}
+                          <g 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setAnnotations(prev => prev.filter((_, i) => i !== idx));
+                            }}
+                            className="cursor-pointer"
                           >
-                            <title>Tıklayıp Sürükleyerek Taşıyın</title>
-                          </circle>
-                          {/* Word-style 4 Handle Dots for Resizing & Moving */}
-                          <circle cx={ann.cx - ann.r} cy={ann.cy} r={4} fill="#10b981" stroke="#ffffff" strokeWidth={1} />
-                          <circle cx={ann.cx + ann.r} cy={ann.cy} r={4} fill="#10b981" stroke="#ffffff" strokeWidth={1} />
-                          <circle cx={ann.cx} cy={ann.cy - ann.r} r={4} fill="#10b981" stroke="#ffffff" strokeWidth={1} />
-                          <circle cx={ann.cx} cy={ann.cy + ann.r} r={4} fill="#10b981" stroke="#ffffff" strokeWidth={1} />
+                            <circle cx={ann.cx + r} cy={ann.cy - r} r={10} fill="#ef4444" stroke="#ffffff" strokeWidth={1.5} />
+                            <text x={ann.cx + r} y={ann.cy - r + 3.5} fill="#ffffff" textAnchor="middle" className="text-[10px] font-bold font-mono">✕</text>
+                          </g>
                         </g>
                       );
                     } else if (ann.type === 'ruler') {
@@ -5067,25 +5083,31 @@ JIF-GO AI v1.0 Akıllı Medikal İnceleme ve Otomatik Epikriz Raporudur.
                         <path key={idx} d={pathData} fill="none" stroke={ann.color} strokeWidth={ann.width} strokeLinecap="round" strokeLinejoin="round" />
                       );
                     } else if (ann.type === 'circle') {
+                      const r = ann.r || 30;
                       return (
-                        <g key={idx}>
-                          <circle 
-                            cx={ann.cx} 
-                            cy={ann.cy} 
-                            r={ann.r} 
-                            fill="rgba(6,182,212,0.1)" 
-                            stroke={ann.color || '#ef4444'} 
-                            strokeWidth={ann.width || 3} 
-                            className="cursor-move hover:stroke-cyan-300 transition-colors"
-                            style={{ cursor: 'move' }}
+                        <g key={idx} className="cursor-move group" style={{ cursor: 'move' }}>
+                          {/* Sleek Medical Target Focus Pin */}
+                          <circle cx={ann.cx} cy={ann.cy} r={r} fill="rgba(239,68,68,0.15)" stroke={ann.color || '#ef4444'} strokeWidth={ann.width || 3} />
+                          <circle cx={ann.cx} cy={ann.cy} r={4} fill={ann.color || '#ef4444'} />
+                          <line x1={ann.cx - 8} y1={ann.cy} x2={ann.cx + 8} y2={ann.cy} stroke={ann.color || '#ef4444'} strokeWidth={1.5} />
+                          <line x1={ann.cx} y1={ann.cy - 8} x2={ann.cx} y2={ann.cy + 8} stroke={ann.color || '#ef4444'} strokeWidth={1.5} />
+                          
+                          {/* Odak Badge Label */}
+                          <text x={ann.cx} y={ann.cy - r - 6} fill="#ef4444" textAnchor="middle" className="text-[10px] font-mono font-bold select-none pointer-events-none" style={{ textShadow: '1px 1px 2px #000' }}>
+                            📍 Odak #{idx + 1}
+                          </text>
+
+                          {/* Quick Delete [✕] Button */}
+                          <g 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRadAnnotations(prev => prev.filter((_, i) => i !== idx));
+                            }}
+                            className="cursor-pointer"
                           >
-                            <title>Tıklayıp Sürükleyerek Taşıyın</title>
-                          </circle>
-                          {/* Word-style 4 Handle Dots for Resizing & Moving */}
-                          <circle cx={ann.cx - ann.r} cy={ann.cy} r={4} fill="#06b6d4" stroke="#ffffff" strokeWidth={1} />
-                          <circle cx={ann.cx + ann.r} cy={ann.cy} r={4} fill="#06b6d4" stroke="#ffffff" strokeWidth={1} />
-                          <circle cx={ann.cx} cy={ann.cy - ann.r} r={4} fill="#06b6d4" stroke="#ffffff" strokeWidth={1} />
-                          <circle cx={ann.cx} cy={ann.cy + ann.r} r={4} fill="#06b6d4" stroke="#ffffff" strokeWidth={1} />
+                            <circle cx={ann.cx + r} cy={ann.cy - r} r={10} fill="#ef4444" stroke="#ffffff" strokeWidth={1.5} />
+                            <text x={ann.cx + r} y={ann.cy - r + 3.5} fill="#ffffff" textAnchor="middle" className="text-[10px] font-bold font-mono">✕</text>
+                          </g>
                         </g>
                       );
                     } else if (ann.type === 'ruler') {
