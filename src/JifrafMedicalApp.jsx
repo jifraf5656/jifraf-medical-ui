@@ -1025,6 +1025,7 @@ export default function JifrafFuturisticApp() {
   const [radAnnotations, setRadAnnotations] = useState([]);
   const [activeRadAnnotation, setActiveRadAnnotation] = useState(null);
   const [draggingRadIndex, setDraggingRadIndex] = useState(null);
+  const [resizingRadIndex, setResizingRadIndex] = useState(null);
   const [dragRadOffset, setDragRadOffset] = useState({ x: 0, y: 0 });
   const [radAiSummaryBalloon, setRadAiSummaryBalloon] = useState(null);
   const [radAiConsulting, setRadAiConsulting] = useState(false);
@@ -1346,6 +1347,19 @@ export default function JifrafFuturisticApp() {
   const handleRadMouseMove = (e) => {
     const { x, y } = getRadSvgCoords(e);
 
+    if (resizingRadIndex !== null) {
+      setRadAnnotations(prev => prev.map((ann, idx) => {
+        if (idx === resizingRadIndex) {
+          const dx = x - ann.cx;
+          const dy = y - ann.cy;
+          const r = Math.max(15, Math.min(300, Math.sqrt(dx * dx + dy * dy)));
+          return { ...ann, r };
+        }
+        return ann;
+      }));
+      return;
+    }
+
     if (draggingRadIndex !== null) {
       setRadAnnotations(prev => {
         const next = [...prev];
@@ -1385,6 +1399,10 @@ export default function JifrafFuturisticApp() {
   };
 
   const handleRadMouseUp = (e) => {
+    if (resizingRadIndex !== null) {
+      setResizingRadIndex(null);
+      return;
+    }
     if (draggingRadIndex !== null) {
       setDraggingRadIndex(null);
       return;
@@ -4565,22 +4583,36 @@ JIF-GO AI v1.0 Akıllı Medikal İnceleme ve Otomatik Epikriz Raporudur.
                           <line x1={ann.cx - 8} y1={ann.cy} x2={ann.cx + 8} y2={ann.cy} stroke={ann.color || '#10b981'} strokeWidth={1.5} />
                           <line x1={ann.cx} y1={ann.cy - 8} x2={ann.cx} y2={ann.cy + 8} stroke={ann.color || '#10b981'} strokeWidth={1.5} />
                           
-                          {/* Odak Badge Label */}
-                          <text x={ann.cx} y={ann.cy - r - 6} fill="#10b981" textAnchor="middle" className="text-[10px] font-mono font-bold select-none pointer-events-none" style={{ textShadow: '1px 1px 2px #000' }}>
-                            📍 Odak #{idx + 1}
-                          </text>
+                          {/* Odak Badge Bar with [+] [-] [✕] Controls */}
+                          <g className="select-none">
+                            <rect x={ann.cx - 65} y={ann.cy - r - 24} width={130} height={20} rx={10} fill="#020817" stroke={ann.color || '#10b981'} strokeWidth={1.2} />
+                            <text x={ann.cx - 24} y={ann.cy - r - 10} fill="#10b981" textAnchor="middle" className="text-[9px] font-mono font-bold">
+                              📍 Odak #{idx + 1}
+                            </text>
 
-                          {/* Quick Delete [✕] Button */}
-                          <g 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setAnnotations(prev => prev.filter((_, i) => i !== idx));
-                            }}
-                            className="cursor-pointer"
-                          >
-                            <circle cx={ann.cx + r} cy={ann.cy - r} r={10} fill="#ef4444" stroke="#ffffff" strokeWidth={1.5} />
-                            <text x={ann.cx + r} y={ann.cy - r + 3.5} fill="#ffffff" textAnchor="middle" className="text-[10px] font-bold font-mono">✕</text>
+                            {/* [-] Shrink Button */}
+                            <g onClick={(e) => { e.stopPropagation(); setAnnotations(prev => prev.map((a, i) => i === idx ? { ...a, r: Math.max(15, (a.r || 30) - 10) } : a)); }} className="cursor-pointer">
+                              <circle cx={ann.cx + 15} cy={ann.cy - r - 14} r={6.5} fill="#1e293b" stroke="#10b981" strokeWidth={1} />
+                              <text x={ann.cx + 15} y={ann.cy - r - 11.5} fill="#ffffff" textAnchor="middle" className="text-[10px] font-bold font-mono">-</text>
+                            </g>
+
+                            {/* [+] Expand Button */}
+                            <g onClick={(e) => { e.stopPropagation(); setAnnotations(prev => prev.map((a, i) => i === idx ? { ...a, r: Math.min(250, (a.r || 30) + 10) } : a)); }} className="cursor-pointer">
+                              <circle cx={ann.cx + 31} cy={ann.cy - r - 14} r={6.5} fill="#1e293b" stroke="#10b981" strokeWidth={1} />
+                              <text x={ann.cx + 31} y={ann.cy - r - 11.5} fill="#ffffff" textAnchor="middle" className="text-[10px] font-bold font-mono">+</text>
+                            </g>
+
+                            {/* [✕] Delete Button */}
+                            <g onClick={(e) => { e.stopPropagation(); setAnnotations(prev => prev.filter((_, i) => i !== idx)); }} className="cursor-pointer">
+                              <circle cx={ann.cx + 47} cy={ann.cy - r - 14} r={6.5} fill="#ef4444" stroke="#ffffff" strokeWidth={1} />
+                              <text x={ann.cx + 47} y={ann.cy - r - 11.5} fill="#ffffff" textAnchor="middle" className="text-[9px] font-bold font-mono">✕</text>
+                            </g>
                           </g>
+
+                          {/* Edge Drag-to-Resize Handle Dot */}
+                          <circle cx={ann.cx + r} cy={ann.cy} r={5} fill="#10b981" stroke="#ffffff" strokeWidth={1.5} className="cursor-ew-resize hover:scale-125 transition-transform" style={{ cursor: 'ew-resize' }}>
+                            <title>Çapı büyütmek/küçültmek için çekin</title>
+                          </circle>
                         </g>
                       );
                     } else if (ann.type === 'ruler') {
@@ -4916,22 +4948,36 @@ JIF-GO AI v1.0 Akıllı Medikal İnceleme ve Otomatik Epikriz Raporudur.
                           <line x1={ann.cx - 8} y1={ann.cy} x2={ann.cx + 8} y2={ann.cy} stroke={ann.color || '#ef4444'} strokeWidth={1.5} />
                           <line x1={ann.cx} y1={ann.cy - 8} x2={ann.cx} y2={ann.cy + 8} stroke={ann.color || '#ef4444'} strokeWidth={1.5} />
                           
-                          {/* Odak Badge Label */}
-                          <text x={ann.cx} y={ann.cy - r - 6} fill="#ef4444" textAnchor="middle" className="text-[10px] font-mono font-bold select-none pointer-events-none" style={{ textShadow: '1px 1px 2px #000' }}>
-                            📍 Odak #{idx + 1}
-                          </text>
+                          {/* Odak Badge Bar with [+] [-] [✕] Controls */}
+                          <g className="select-none">
+                            <rect x={ann.cx - 65} y={ann.cy - r - 24} width={130} height={20} rx={10} fill="#020817" stroke={ann.color || '#ef4444'} strokeWidth={1.2} />
+                            <text x={ann.cx - 24} y={ann.cy - r - 10} fill="#ef4444" textAnchor="middle" className="text-[9px] font-mono font-bold">
+                              📍 Odak #{idx + 1}
+                            </text>
 
-                          {/* Quick Delete [✕] Button */}
-                          <g 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setRadAnnotations(prev => prev.filter((_, i) => i !== idx));
-                            }}
-                            className="cursor-pointer"
-                          >
-                            <circle cx={ann.cx + r} cy={ann.cy - r} r={10} fill="#ef4444" stroke="#ffffff" strokeWidth={1.5} />
-                            <text x={ann.cx + r} y={ann.cy - r + 3.5} fill="#ffffff" textAnchor="middle" className="text-[10px] font-bold font-mono">✕</text>
+                            {/* [-] Shrink Button */}
+                            <g onClick={(e) => { e.stopPropagation(); setRadAnnotations(prev => prev.map((a, i) => i === idx ? { ...a, r: Math.max(15, (a.r || 30) - 10) } : a)); }} className="cursor-pointer">
+                              <circle cx={ann.cx + 15} cy={ann.cy - r - 14} r={6.5} fill="#1e293b" stroke="#ef4444" strokeWidth={1} />
+                              <text x={ann.cx + 15} y={ann.cy - r - 11.5} fill="#ffffff" textAnchor="middle" className="text-[10px] font-bold font-mono">-</text>
+                            </g>
+
+                            {/* [+] Expand Button */}
+                            <g onClick={(e) => { e.stopPropagation(); setRadAnnotations(prev => prev.map((a, i) => i === idx ? { ...a, r: Math.min(250, (a.r || 30) + 10) } : a)); }} className="cursor-pointer">
+                              <circle cx={ann.cx + 31} cy={ann.cy - r - 14} r={6.5} fill="#1e293b" stroke="#ef4444" strokeWidth={1} />
+                              <text x={ann.cx + 31} y={ann.cy - r - 11.5} fill="#ffffff" textAnchor="middle" className="text-[10px] font-bold font-mono">+</text>
+                            </g>
+
+                            {/* [✕] Delete Button */}
+                            <g onClick={(e) => { e.stopPropagation(); setRadAnnotations(prev => prev.filter((_, i) => i !== idx)); }} className="cursor-pointer">
+                              <circle cx={ann.cx + 47} cy={ann.cy - r - 14} r={6.5} fill="#ef4444" stroke="#ffffff" strokeWidth={1} />
+                              <text x={ann.cx + 47} y={ann.cy - r - 11.5} fill="#ffffff" textAnchor="middle" className="text-[9px] font-bold font-mono">✕</text>
+                            </g>
                           </g>
+
+                          {/* Edge Drag-to-Resize Handle Dot */}
+                          <circle cx={ann.cx + r} cy={ann.cy} r={5} fill="#ef4444" stroke="#ffffff" strokeWidth={1.5} className="cursor-ew-resize hover:scale-125 transition-transform" style={{ cursor: 'ew-resize' }}>
+                            <title>Çapı büyütmek/küçültmek için çekin</title>
+                          </circle>
                         </g>
                       );
                     } else if (ann.type === 'ruler') {
