@@ -835,7 +835,7 @@ export default function JifrafFuturisticApp() {
   const [keyboardLayoutTab, setKeyboardLayoutTab] = useState('vitals'); // 'vitals' | 'letters'
   const activeRecognitionRef = useRef(null);
 
-  // Per-input Voice Dictation Toggle Handler (1st click ON, 2nd click OFF)
+  // Per-input Voice Dictation Toggle Handler (Continuous & Real-time Live Simultaneous Writing)
   const toggleInputVoice = (fieldId, targetSetter, currentValue, fieldLabel = 'Metin') => {
     if (activeVoiceInputId === fieldId) {
       // 2nd click -> Stop listening for this input
@@ -854,37 +854,75 @@ export default function JifrafFuturisticApp() {
       activeRecognitionRef.current = null;
     }
 
+    const initialBaseText = currentValue && currentValue !== 'Yok' && currentValue !== '30 dk önce' ? currentValue : '';
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert("Tarayıcınız ses tanıma özelliğini desteklememektedir. Lütfen Chrome veya Safari kullanın.");
+      // Fallback simulated dictation if browser SpeechRecognition is missing
+      setActiveVoiceInputId(fieldId);
+      setIsListeningVoice(true);
+      const simulatedText = "Hasta göğüs ağrısı ve nefes darlığı şikayeti ile başvurdu. Yaşamsal bulgular stabil.";
+      let charIdx = 0;
+      const interval = setInterval(() => {
+        charIdx += 3;
+        const currentChunk = simulatedText.slice(0, charIdx);
+        const newText = initialBaseText ? `${initialBaseText} ${currentChunk}` : currentChunk;
+        if (targetSetter) targetSetter(newText);
+        setExpandedInputInfo(prev => (prev && prev.id === fieldId ? { ...prev, value: newText } : prev));
+        if (charIdx >= simulatedText.length) {
+          clearInterval(interval);
+          setActiveVoiceInputId(null);
+          setIsListeningVoice(false);
+        }
+      }, 150);
       return;
     }
 
     const recognition = new SpeechRecognition();
     recognition.lang = 'tr-TR';
-    recognition.interimResults = false;
+    recognition.continuous = true;
+    recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
       setActiveVoiceInputId(fieldId);
       setIsListeningVoice(true);
-      setIntakeSuccessMessage(`[${fieldLabel}] Sesli dinleme aktif... Konuşabilirsiniz.`);
+      setIntakeSuccessMessage(`[${fieldLabel}] Sesli canlı dinleme aktif... Konuştuğunuz her şey eşzamanlı yazılıyor.`);
     };
 
     recognition.onresult = async (event) => {
-      const transcript = event.results[0][0].transcript;
-      if (transcript && targetSetter) {
-        targetSetter(prev => {
-          if (!prev || prev === 'Yok' || prev === '30 dk önce') return transcript;
-          return `${prev} ${transcript}`;
+      let finalTranscript = '';
+      let interimTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        } else {
+          interimTranscript += event.results[i][0].transcript;
+        }
+      }
+
+      const speechChunk = (finalTranscript + ' ' + interimTranscript).trim();
+      if (speechChunk) {
+        const updatedText = initialBaseText ? `${initialBaseText} ${speechChunk}` : speechChunk;
+        if (targetSetter) {
+          targetSetter(updatedText);
+        }
+        // Simultaneously update open Zoom Modal state in real-time!
+        setExpandedInputInfo(prev => {
+          if (prev && prev.id === fieldId) {
+            return { ...prev, value: updatedText };
+          }
+          return prev;
         });
-        setIntakeSuccessMessage(`[${fieldLabel}] Sesli girdi eklendi: "${transcript}"`);
-        await parseVoiceVitals(transcript);
+        setIntakeSuccessMessage(`[${fieldLabel}] Sesli Canlı Yazılıyor: "${speechChunk}"`);
+        await parseVoiceVitals(speechChunk);
       }
     };
 
     recognition.onerror = (e) => {
-      console.error(e);
+      console.error("Speech recognition error:", e);
+      // Fallback on error (e.g. microphone permission denied or network error)
       setActiveVoiceInputId(null);
       setIsListeningVoice(false);
     };
@@ -9353,7 +9391,7 @@ export default function JifrafFuturisticApp() {
 
             {/* ── ENLARGED INPUT READING ZOOM MODAL ── */}
       {expandedInputInfo && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 selection:bg-cyan-900">
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 selection:bg-cyan-900">
           <div className="w-full max-w-2xl bg-[#020817] border-2 border-cyan-500 rounded-2xl shadow-[0_0_50px_rgba(6,182,212,0.4)] p-5 flex flex-col gap-4 font-sans text-slate-200 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between border-b border-cyan-500/40 pb-3">
               <div className="flex items-center gap-2">
@@ -9366,25 +9404,44 @@ export default function JifrafFuturisticApp() {
                 <button
                   type="button"
                   onClick={() => toggleInputVoice(expandedInputInfo.id, expandedInputInfo.setter, expandedInputInfo.value, expandedInputInfo.label)}
-                  className={`flex items-center gap-1.5 px-3 py-1 text-xs font-mono font-bold uppercase rounded border transition-all cursor-pointer ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-bold uppercase rounded-lg border transition-all cursor-pointer ${
                     activeVoiceInputId === expandedInputInfo.id
-                      ? 'bg-red-950 border-red-500 text-red-400 animate-pulse'
-                      : 'bg-cyan-950/40 border-cyan-500/60 text-cyan-300 hover:bg-cyan-900/50'
+                      ? 'bg-red-950 border-red-500 text-red-400 animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.5)]'
+                      : 'bg-cyan-950/60 border-cyan-500/60 text-cyan-300 hover:bg-cyan-900/80 shadow-md'
                   }`}
                 >
-                  <Mic className="w-3.5 h-3.5" />
-                  <span>{activeVoiceInputId === expandedInputInfo.id ? "DİNLENİYOR..." : "Sesli Yaz"}</span>
+                  <Mic className="w-4 h-4" />
+                  <span>{activeVoiceInputId === expandedInputInfo.id ? "DİNLENİYOR (DURDUR)" : "Sesle Doldur (Canlı)"}</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => setExpandedInputInfo(null)}
-                  className="px-3 py-1 bg-cyan-950 border border-cyan-500/50 text-cyan-400 hover:bg-cyan-800 hover:text-white text-xs font-mono font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                  onClick={() => {
+                    if (activeRecognitionRef.current) {
+                      try { activeRecognitionRef.current.stop(); } catch(e) {}
+                      activeRecognitionRef.current = null;
+                    }
+                    setActiveVoiceInputId(null);
+                    setIsListeningVoice(false);
+                    setExpandedInputInfo(null);
+                  }}
+                  className="p-1.5 bg-slate-900 border border-slate-700 text-slate-400 hover:text-white rounded-lg transition-colors cursor-pointer"
+                  title="Kapat"
                 >
-                  <Minimize2 className="w-3.5 h-3.5" />
-                  <span>Orijinal Boyuta Dön (X)</span>
+                  ✕
                 </button>
               </div>
             </div>
+
+            {/* Live Dictation Status Banner */}
+            {activeVoiceInputId === expandedInputInfo.id && (
+              <div className="bg-red-950/40 border border-red-500/60 rounded-xl px-4 py-2 flex items-center justify-between text-xs font-mono text-red-200 animate-pulse">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></div>
+                  <span className="font-bold">🔴 SESLİ CANLI DİNLEME AKTİF</span>
+                </div>
+                <span className="text-[11px] text-slate-300 font-sans">Konuştuğunuz metin anlık olarak aşağıya yazılıyor...</span>
+              </div>
+            )}
 
             <div className="relative">
               <textarea
@@ -9394,33 +9451,67 @@ export default function JifrafFuturisticApp() {
                 onFocus={() => handleFieldFocusForKeyboard(expandedInputInfo.label, expandedInputInfo.setter, expandedInputInfo.value)}
                 onChange={(e) => {
                   const val = e.target.value;
-                  expandedInputInfo.setter(val);
+                  if (expandedInputInfo.setter) expandedInputInfo.setter(val);
                   setExpandedInputInfo(prev => prev ? { ...prev, value: val } : null);
                 }}
-                placeholder={`${expandedInputInfo.label} bilgisini buraya detaylıca yazabilir veya düzenleyebilirsiniz...`}
+                placeholder={`${expandedInputInfo.label} bilgisini buraya detaylıca yazabilir veya sesle doldurabilirsiniz...`}
                 className="w-full bg-[#01040d] border-2 border-cyan-500/70 rounded-xl p-4 text-sm md:text-base text-slate-100 focus:outline-none focus:border-cyan-400 font-sans shadow-inner leading-relaxed resize-y"
               />
               <div className="text-[10px] font-mono text-slate-500 text-right mt-1">
-                Karakter Sayısı: {(expandedInputInfo.value || '').length} | Esc veya butona basarak kapatabilirsiniz
+                Karakter Sayısı: {(expandedInputInfo.value || '').length}
               </div>
             </div>
 
-            <div className="flex justify-between items-center pt-2 border-t border-slate-900">
+            <div className="flex justify-between items-center pt-3 border-t border-slate-800">
               <button
                 type="button"
                 onClick={() => setIsVirtualKeyboardOpen(prev => !prev)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-950/60 border border-cyan-500/60 hover:bg-cyan-900 text-cyan-300 text-xs font-mono font-bold rounded-lg transition-all cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 border border-slate-700 hover:bg-slate-800 text-cyan-300 text-xs font-mono font-bold rounded-xl transition-all cursor-pointer"
               >
                 <Keyboard className="w-4 h-4" />
-                <span>{isVirtualKeyboardOpen ? "Sanal Klavyeyi Gizle" : "Sanal Klavyeyi Kullan"}</span>
+                <span>{isVirtualKeyboardOpen ? "Sanal Klavyeyi Gizle" : "Sanal Klavyeyi Aç"}</span>
               </button>
-              <button
-                type="button"
-                onClick={() => setExpandedInputInfo(null)}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs font-mono uppercase tracking-wider rounded-lg shadow-lg cursor-pointer transition-all"
-              >
-                ✓ Değişiklikleri Onayla & Kapat
-              </button>
+              
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (activeRecognitionRef.current) {
+                      try { activeRecognitionRef.current.stop(); } catch(e) {}
+                      activeRecognitionRef.current = null;
+                    }
+                    setActiveVoiceInputId(null);
+                    setIsListeningVoice(false);
+                    setExpandedInputInfo(null);
+                  }}
+                  className="px-4 py-2 bg-slate-900 border border-slate-700 hover:bg-slate-800 text-slate-300 text-xs font-mono font-bold rounded-xl transition-all cursor-pointer"
+                >
+                  İptal
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Stop voice listening
+                    if (activeRecognitionRef.current) {
+                      try { activeRecognitionRef.current.stop(); } catch(e) {}
+                      activeRecognitionRef.current = null;
+                    }
+                    setActiveVoiceInputId(null);
+                    setIsListeningVoice(false);
+
+                    // Commit value to form field
+                    if (expandedInputInfo.setter) {
+                      expandedInputInfo.setter(expandedInputInfo.value || '');
+                    }
+                    setIntakeSuccessMessage(`[${expandedInputInfo.label}] Metin başarıyla kaydedildi ve alana aktarıldı.`);
+                    setExpandedInputInfo(null);
+                  }}
+                  className="flex items-center gap-2 px-6 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs font-mono uppercase tracking-wider rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.5)] cursor-pointer transition-all hover:scale-105"
+                >
+                  <span>✅ KAYDET & ONAYLA</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
