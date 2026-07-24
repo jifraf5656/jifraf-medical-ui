@@ -4509,24 +4509,96 @@ JIF-GO AI v1.0 Akıllı Medikal İnceleme ve Otomatik Epikriz Raporudur.
             </div>
           )}
           
-          <div className="flex-1 flex flex-col justify-center p-4 relative z-0 pb-16">
-            {hasEkgPreview && (
-              <div className="absolute inset-0 z-0 p-4 pb-16">
-                <div className="w-full h-full rounded-xl overflow-hidden border border-emerald-500/20 bg-slate-950/70 flex items-center justify-center">
-                  {isImagePreviewFile(activeEkgFile) ? (
-                    <img
-                      src={activeEkgFile.preview_url}
-                      alt={activeEkgFile.original_filename || 'EKG preview'}
-                      className="w-full h-full object-contain"
-                    />
-                  ) : (
-                    <iframe
-                      title={activeEkgFile.original_filename || 'EKG PDF preview'}
-                      src={activeEkgFile.preview_url}
-                      className="w-full h-full bg-white"
-                    />
+          <div className="flex-1 flex flex-col justify-center items-center p-4 relative z-0 pb-16 min-h-[350px]">
+            {hasEkgPreview && isImagePreviewFile(activeEkgFile) && (
+              <div className="relative inline-flex items-center justify-center max-w-full max-h-[550px] rounded-xl border border-emerald-500/30 bg-slate-950/80 shadow-2xl overflow-hidden">
+                <img
+                  src={activeEkgFile.preview_url}
+                  alt={activeEkgFile.original_filename || 'EKG preview'}
+                  className="max-h-[550px] w-auto h-auto object-contain block pointer-events-none select-none"
+                />
+                <svg 
+                  viewBox="0 0 1000 1000"
+                  preserveAspectRatio="none"
+                  className="absolute inset-0 w-full h-full select-none touch-none z-10"
+                  style={{ cursor: ekgTool ? 'crosshair' : 'default' }}
+                  onMouseDown={handleEKGMouseDown}
+                  onMouseMove={handleEKGMouseMove}
+                  onMouseUp={handleEKGMouseUp}
+                  onTouchStart={handleEKGMouseDown}
+                  onTouchMove={handleEKGMouseMove}
+                  onTouchEnd={handleEKGMouseUp}
+                  onContextMenu={(e) => e.preventDefault()}
+                >
+                  {/* Render completed annotations */}
+                  {ekgViewMode === 'processed' && annotations.map((ann, idx) => {
+                    if (ann.type === 'pen') {
+                      const pathData = ann.points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
+                      return (
+                        <path 
+                          key={idx} 
+                          d={pathData} 
+                          fill="none" 
+                          stroke={ann.color} 
+                          strokeWidth={ann.width} 
+                          strokeLinecap="round" 
+                          strokeLinejoin="round" 
+                        />
+                      );
+                    } else if (ann.type === 'circle') {
+                      return (
+                        <g key={idx}>
+                          <circle 
+                            cx={ann.cx} 
+                            cy={ann.cy} 
+                            r={ann.r} 
+                            fill="rgba(16,185,129,0.1)" 
+                            stroke={ann.color || '#10b981'} 
+                            strokeWidth={ann.width || 3} 
+                            className="cursor-move hover:stroke-cyan-300 transition-colors"
+                            style={{ cursor: 'move' }}
+                          >
+                            <title>Tıklayıp Sürükleyerek Taşıyın</title>
+                          </circle>
+                          {/* Word-style 4 Handle Dots for Resizing & Moving */}
+                          <circle cx={ann.cx - ann.r} cy={ann.cy} r={4} fill="#10b981" stroke="#ffffff" strokeWidth={1} />
+                          <circle cx={ann.cx + ann.r} cy={ann.cy} r={4} fill="#10b981" stroke="#ffffff" strokeWidth={1} />
+                          <circle cx={ann.cx} cy={ann.cy - ann.r} r={4} fill="#10b981" stroke="#ffffff" strokeWidth={1} />
+                          <circle cx={ann.cx} cy={ann.cy + ann.r} r={4} fill="#10b981" stroke="#ffffff" strokeWidth={1} />
+                        </g>
+                      );
+                    } else if (ann.type === 'ruler') {
+                      const lenPx = Math.sqrt((ann.x2 - ann.x1) ** 2 + (ann.y2 - ann.y1) ** 2);
+                      const lenMm = (lenPx * 0.2).toFixed(1);
+                      const midX = (ann.x1 + ann.x2) / 2;
+                      const midY = (ann.y1 + ann.y2) / 2;
+                      return (
+                        <g key={idx}>
+                          <line x1={ann.x1} y1={ann.y1} x2={ann.x2} y2={ann.y2} stroke="#f59e0b" strokeWidth={2} strokeDasharray="3 3" />
+                          <text x={midX} y={midY - 8} fill="#f59e0b" textAnchor="middle" className="text-[9px] font-mono font-bold">↔ {lenMm} mm</text>
+                        </g>
+                      );
+                    }
+                    return null;
+                  })}
+
+                  {/* Render active drawing stroke */}
+                  {ekgViewMode === 'processed' && activeAnnotation && (
+                    <>
+                      {activeAnnotation.type === 'pen' && (
+                        <path d={activeAnnotation.points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')} fill="none" stroke={penColor} strokeWidth={penWidth} strokeLinecap="round" strokeLinejoin="round" />
+                      )}
+                      {activeAnnotation.type === 'circle' && (
+                        <g>
+                          <circle cx={activeAnnotation.cx} cy={activeAnnotation.cy} r={activeAnnotation.r} fill="none" stroke={penColor} strokeWidth={penWidth} strokeDasharray="4 3" />
+                        </g>
+                      )}
+                      {activeAnnotation.type === 'ruler' && (
+                        <line x1={activeAnnotation.x1} y1={activeAnnotation.y1} x2={activeAnnotation.x2} y2={activeAnnotation.y2} stroke="#f59e0b" strokeWidth={2} strokeDasharray="3 3" />
+                      )}
+                    </>
                   )}
-                </div>
+                </svg>
               </div>
             )}
 
@@ -4966,26 +5038,88 @@ JIF-GO AI v1.0 Akıllı Medikal İnceleme ve Otomatik Epikriz Raporudur.
           )}
 
           <div className="flex-1 flex flex-col justify-center items-center p-4 relative z-0 pb-16 min-h-[350px]">
-            {hasRadPreview && (
-              <div className="absolute inset-0 z-0 p-4 pb-16">
-                <div className="w-full h-full rounded-xl overflow-hidden border border-cyan-500/20 bg-slate-950/70 flex items-center justify-center">
-                  {activeRadFile.preview_url === 'MOCK_DICOM_PREVIEW' || activeRadFile.original_filename?.toLowerCase().endsWith('.dcm') || activeRadFile.original_filename?.toLowerCase().endsWith('.dicom') ? (
-                    renderDicomSimulator()
-                  ) : isImagePreviewFile(activeRadFile) ? (
-                    <img
-                      src={activeRadFile.preview_url}
-                      alt={activeRadFile.original_filename || 'Radiology preview'}
-                      className="w-full h-full object-contain"
-                      style={{ filter: `brightness(${dicomWL}%) contrast(${dicomWW}%)` }}
-                    />
-                  ) : (
-                    <iframe
-                      title={activeRadFile.original_filename || 'Radiology PDF preview'}
-                      src={activeRadFile.preview_url}
-                      className="w-full h-full bg-white"
-                    />
+            {hasRadPreview && isImagePreviewFile(activeRadFile) && (
+              <div className="relative inline-flex items-center justify-center max-w-full max-h-[550px] rounded-xl border border-cyan-500/30 bg-slate-950/80 shadow-2xl overflow-hidden">
+                <img
+                  src={activeRadFile.preview_url}
+                  alt={activeRadFile.original_filename || 'Radiology preview'}
+                  className="max-h-[550px] w-auto h-auto object-contain block pointer-events-none select-none"
+                  style={{ filter: `brightness(${dicomWL}%) contrast(${dicomWW}%)` }}
+                />
+                <svg 
+                  viewBox="0 0 1000 1000"
+                  preserveAspectRatio="none"
+                  className="absolute inset-0 w-full h-full select-none touch-none z-10"
+                  style={{ cursor: radTool ? 'crosshair' : 'default' }}
+                  onMouseDown={handleRadMouseDown}
+                  onMouseMove={handleRadMouseMove}
+                  onMouseUp={handleRadMouseUp}
+                  onTouchStart={handleRadMouseDown}
+                  onTouchMove={handleRadMouseMove}
+                  onTouchEnd={handleRadMouseUp}
+                  onContextMenu={(e) => e.preventDefault()}
+                >
+                  {/* Render completed annotations */}
+                  {radAnnotations.map((ann, idx) => {
+                    if (ann.type === 'pen') {
+                      const pathData = ann.points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
+                      return (
+                        <path key={idx} d={pathData} fill="none" stroke={ann.color} strokeWidth={ann.width} strokeLinecap="round" strokeLinejoin="round" />
+                      );
+                    } else if (ann.type === 'circle') {
+                      return (
+                        <g key={idx}>
+                          <circle 
+                            cx={ann.cx} 
+                            cy={ann.cy} 
+                            r={ann.r} 
+                            fill="rgba(6,182,212,0.1)" 
+                            stroke={ann.color || '#ef4444'} 
+                            strokeWidth={ann.width || 3} 
+                            className="cursor-move hover:stroke-cyan-300 transition-colors"
+                            style={{ cursor: 'move' }}
+                          >
+                            <title>Tıklayıp Sürükleyerek Taşıyın</title>
+                          </circle>
+                          {/* Word-style 4 Handle Dots for Resizing & Moving */}
+                          <circle cx={ann.cx - ann.r} cy={ann.cy} r={4} fill="#06b6d4" stroke="#ffffff" strokeWidth={1} />
+                          <circle cx={ann.cx + ann.r} cy={ann.cy} r={4} fill="#06b6d4" stroke="#ffffff" strokeWidth={1} />
+                          <circle cx={ann.cx} cy={ann.cy - ann.r} r={4} fill="#06b6d4" stroke="#ffffff" strokeWidth={1} />
+                          <circle cx={ann.cx} cy={ann.cy + ann.r} r={4} fill="#06b6d4" stroke="#ffffff" strokeWidth={1} />
+                        </g>
+                      );
+                    } else if (ann.type === 'ruler') {
+                      const lenPx = Math.sqrt((ann.x2 - ann.x1) ** 2 + (ann.y2 - ann.y1) ** 2);
+                      const lenMm = (lenPx * 0.25).toFixed(1);
+                      const midX = (ann.x1 + ann.x2) / 2;
+                      const midY = (ann.y1 + ann.y2) / 2;
+                      return (
+                        <g key={idx}>
+                          <line x1={ann.x1} y1={ann.y1} x2={ann.x2} y2={ann.y2} stroke="#f59e0b" strokeWidth={2} strokeDasharray="3 3" />
+                          <text x={midX} y={midY - 8} fill="#f59e0b" textAnchor="middle" className="text-[9px] font-mono font-bold">↔ {lenMm} mm</text>
+                        </g>
+                      );
+                    }
+                    return null;
+                  })}
+
+                  {/* Render active drawing stroke */}
+                  {activeRadAnnotation && (
+                    <>
+                      {activeRadAnnotation.type === 'pen' && (
+                        <path d={activeRadAnnotation.points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')} fill="none" stroke={radPenColor} strokeWidth={radPenWidth} strokeLinecap="round" strokeLinejoin="round" />
+                      )}
+                      {activeRadAnnotation.type === 'circle' && (
+                        <g>
+                          <circle cx={activeRadAnnotation.cx} cy={activeRadAnnotation.cy} r={activeRadAnnotation.r} fill="none" stroke={radPenColor || '#ef4444'} strokeWidth={radPenWidth || 3} />
+                        </g>
+                      )}
+                      {activeRadAnnotation.type === 'ruler' && (
+                        <line x1={activeRadAnnotation.x1} y1={activeRadAnnotation.y1} x2={activeRadAnnotation.x2} y2={activeRadAnnotation.x2} stroke="#f59e0b" strokeWidth={2} strokeDasharray="3 3" />
+                      )}
+                    </>
                   )}
-                </div>
+                </svg>
               </div>
             )}
 
