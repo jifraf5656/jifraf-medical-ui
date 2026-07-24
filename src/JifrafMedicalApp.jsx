@@ -784,31 +784,31 @@ export default function JifrafFuturisticApp() {
   }, [isCalibratingRad]);
   
   // Visit & Vitals & Labs Inputs
-  const [intakePulse, setIntakePulse] = useState('145');
-  const [intakeBP, setIntakeBP] = useState('88/52');
-  const [intakeSpO2, setIntakeSpO2] = useState('89');
-  const [intakeTemp, setIntakeTemp] = useState('38.8');
-  const [intakeResp, setIntakeResp] = useState('28');
+  const [intakePulse, setIntakePulse] = useState('');
+  const [intakeBP, setIntakeBP] = useState('');
+  const [intakeSpO2, setIntakeSpO2] = useState('');
+  const [intakeTemp, setIntakeTemp] = useState('');
+  const [intakeResp, setIntakeResp] = useState('');
   
-  const [intakeMCV, setIntakeMCV] = useState('72');
-  const [intakeFerritin, setIntakeFerritin] = useState('12');
-  const [intakeIron, setIntakeIron] = useState('85');
-  const [intakeCRP, setIntakeCRP] = useState('12');
-  const [intakeObsNote, setIntakeObsNote] = useState('Patient presented with acute dyspnea and chest pain.');
+  const [intakeMCV, setIntakeMCV] = useState('');
+  const [intakeFerritin, setIntakeFerritin] = useState('');
+  const [intakeIron, setIntakeIron] = useState('');
+  const [intakeCRP, setIntakeCRP] = useState('');
+  const [intakeObsNote, setIntakeObsNote] = useState('');
   
   const [registeredVisit, setRegisteredVisit] = useState(null);
   const [intakeSuccessMessage, setIntakeSuccessMessage] = useState(null);
 
-  const [intakeOnset, setIntakeOnset] = useState('30 dk önce');
-  const [intakeAdditionalSymptoms, setIntakeAdditionalSymptoms] = useState('Baş Dönmesi, Terleme');
-  const [intakePastHistory, setIntakePastHistory] = useState('Yok');
-  const [intakeFamilyHistory, setIntakeFamilyHistory] = useState('Yok');
-  const [intakePhysicalGen, setIntakePhysicalGen] = useState('Genel durum orta, bilinci açık, koopere, oryante.');
-  const [intakePhysicalResp, setIntakePhysicalResp] = useState('Takipneik, solunum sesleri bilateral doğal, ral veya ronküs işitilmedi.');
-  const [intakePhysicalCVS, setIntakePhysicalCVS] = useState('Taşikardik, S1 S2 ritmik, ek ses veya üfürüm yok.');
-  const [intakePhysicalAbdomen, setIntakePhysicalAbdomen] = useState('Batın rahat, defans veya rebound yok, bağırsak sesleri normoaktif.');
-  const [intakePhysicalNeuro, setIntakePhysicalNeuro] = useState('Nörolojik muayene doğal, motor veya duyu kaybı saptanmadı.');
-  const [intakeLabNotes, setIntakeLabNotes] = useState('Troponin bekliyor, hemogram ve biyokimya panelleri gönderildi.');
+  const [intakeOnset, setIntakeOnset] = useState('');
+  const [intakeAdditionalSymptoms, setIntakeAdditionalSymptoms] = useState('');
+  const [intakePastHistory, setIntakePastHistory] = useState('');
+  const [intakeFamilyHistory, setIntakeFamilyHistory] = useState('');
+  const [intakePhysicalGen, setIntakePhysicalGen] = useState('');
+  const [intakePhysicalResp, setIntakePhysicalResp] = useState('');
+  const [intakePhysicalCVS, setIntakePhysicalCVS] = useState('');
+  const [intakePhysicalAbdomen, setIntakePhysicalAbdomen] = useState('');
+  const [intakePhysicalNeuro, setIntakePhysicalNeuro] = useState('');
+  const [intakeLabNotes, setIntakeLabNotes] = useState('');
   const [clinicianImpression, setClinicianImpression] = useState('');
   const [diagnosisNotes, setDiagnosisNotes] = useState('');
 
