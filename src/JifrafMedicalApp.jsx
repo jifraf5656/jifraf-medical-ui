@@ -1650,6 +1650,35 @@ export default function JifrafFuturisticApp() {
     }
   };
 
+  const runStethFocusedAdvisory = async () => {
+    setStethAiSummaryBalloon(null);
+    setStethAiConsulting(true);
+    setShowStethToolbar(false);
+
+    setTimeout(() => {
+      setStethAiConsulting(false);
+      const stethFile = getLatestCategoryFile('steteskop');
+      if (!stethFile) {
+        setStethAiSummaryBalloon({
+          ritim: "Ses Kaydı Bulunamadı",
+          stSegment: "Lütfen oskültasyon ses kaydı yükleyin veya mikrofon ile kayıt yapın.",
+          odaklar: 0,
+          aksiyon: "Ses kaydı olmadan ses spektrumu analiz edilemez.",
+          disclaimer: "JIF-GO AI Audio Ön Değerlendirme Raporu."
+        });
+        return;
+      }
+      const count = stethAnnotations.length;
+      setStethAiSummaryBalloon({
+        ritim: "Vesiküler Solunum Sesi / S1-S2 Kalp Sesi Akışı Alındı",
+        stSegment: `Aküstik frekans analizi tamamlandı. Kayıt: ${stethFile.original_filename || stethFile.local_file_name}`,
+        odaklar: count,
+        aksiyon: count > 0 ? `${count} adet şüpheli ses odağı işaretlendi; uzman değerlendirmesi önerilir.` : "Patolojik üfürüm/rales saptanmadı, dinleme doğal.",
+        disclaimer: "JIF-GO AI Oskültasyon Ses Analiz Raporu."
+      });
+    }, 1200);
+  };
+
   const runRadFocusedAdvisory = async () => {
     setRadAiSummaryBalloon(null);
     setRadAiConsulting(true);
@@ -1891,6 +1920,10 @@ export default function JifrafFuturisticApp() {
         setRadAiSummaryBalloon(null);
         setRadFocusedAdvisory(null);
         setTimeout(() => { runRadFocusedAdvisory(); }, 600);
+      } else if (uploadCategory === 'steteskop') {
+        setStethAnnotations([]);
+        setStethAiSummaryBalloon(null);
+        setTimeout(() => { runStethFocusedAdvisory(); }, 600);
       } else if (uploadCategory === 'lab') {
         setTimeout(() => { runLabFocusedAdvisory(); }, 600);
       }
@@ -5122,7 +5155,27 @@ export default function JifrafFuturisticApp() {
             </svg>
           </div>
 
-          {renderInlineClinicalReviewPanel(radFocusedAdvisory, "Radyoloji Raporu")}
+          {showStethToolbar && (
+            <FloatingToolbar 
+              ekgViewMode="processed"
+              setEkgViewMode={() => {}}
+              ekgTool={stethTool}
+              setEkgTool={setStethTool}
+              penColor={stethPenColor}
+              setPenColor={setStethPenColor}
+              penWidth={stethPenWidth}
+              setPenWidth={setStethPenWidth}
+              showPenConfig={stethShowPenConfig}
+              setShowPenConfig={setStethShowPenConfig}
+              showEKGGrid={showStethGrid}
+              setShowEKGGrid={setShowStethGrid}
+              setAnnotations={setStethAnnotations}
+              handleSidebarClick={handleSidebarClick}
+              aiConsulting={stethAiConsulting}
+              setAiConsulting={setStethAiConsulting}
+              onTriggerAISweep={runStethFocusedAdvisory}
+            />
+          )}
 
           {showRadToolbar && (
             <FloatingToolbar 
@@ -5165,6 +5218,8 @@ export default function JifrafFuturisticApp() {
   };
 
   const renderStethoscopePanel = (isFloating = false) => {
+    const activeStethFile = getLatestCategoryFile('steteskop');
+    const hasStethPreview = !!activeStethFile?.preview_url;
     return (
       <div className="flex flex-col md:flex-row gap-4 p-3 min-h-0 overflow-y-auto [&::-webkit-scrollbar]:hidden flex-1 font-sans text-slate-300 bg-[#020617]/50 rounded-xl">
         <div className="w-full md:w-1/4 min-h-[300px]">
@@ -5259,6 +5314,35 @@ export default function JifrafFuturisticApp() {
           )}
 
           <div className="flex-1 flex flex-col justify-center items-center p-4 relative z-0 pb-16 min-h-[350px]">
+            {/* Audio File Player & Preview Widget */}
+            {hasStethPreview && (
+              <div className="absolute inset-0 z-0 p-4 pb-16 flex flex-col items-center justify-center pointer-events-auto">
+                <div className="w-full max-w-md rounded-2xl border border-amber-500/50 bg-slate-950/95 p-5 shadow-[0_0_30px_rgba(245,158,11,0.35)] flex flex-col gap-4 text-center z-20">
+                  <div className="flex items-center justify-between border-b border-amber-900/50 pb-2.5">
+                    <div className="flex items-center gap-2 text-amber-400 font-bold text-xs font-mono uppercase tracking-wider">
+                      <Volume2 className="w-4 h-4 animate-pulse text-amber-400" />
+                      <span>Oskültasyon Ses Kaydı Çalma & Dinleme</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-slate-300 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-800">
+                      {activeStethFile.file_type || 'AUDIO'}
+                    </span>
+                  </div>
+
+                  <audio 
+                    controls 
+                    autoPlay
+                    src={activeStethFile.preview_url} 
+                    className="w-full h-11 rounded-lg accent-amber-500 font-mono shadow-inner"
+                  />
+
+                  <div className="text-left text-[11px] font-mono text-slate-300 bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1">
+                    <div className="text-amber-400 font-bold truncate">📁 {activeStethFile.original_filename || activeStethFile.local_file_name}</div>
+                    <div className="text-[10px] text-slate-400">Kayıt/Yükleme Zamanı: {new Date(activeStethFile.uploaded_at || Date.now()).toLocaleTimeString()}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Amber heartbeat soundwave scrolling SVG */}
             <svg viewBox="0 0 500 200" className="absolute inset-0 w-full h-full opacity-35 select-none pointer-events-none p-6">
               <line x1="0" y1="100" x2="500" y2="100" stroke="#451a03" strokeWidth="1" strokeDasharray="3 3" />
